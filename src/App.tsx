@@ -226,9 +226,26 @@ function App() {
         screenAudioSource.connect(dest);
       }
 
+      // Apply Region Capture (crop to the 1920x1080 recording canvas) if supported
+      const videoTrack = displayStream.getVideoTracks()[0];
+      const CropTarget = (window as any).CropTarget;
+      const recordingCanvasEl = document.querySelector('.recording-canvas');
+
+      if (CropTarget && typeof CropTarget.fromElement === 'function' && typeof videoTrack.cropTo === 'function' && recordingCanvasEl) {
+        try {
+          const cropTarget = await CropTarget.fromElement(recordingCanvasEl);
+          await videoTrack.cropTo(cropTarget);
+          console.log("Region Capture crop applied successfully to the recording canvas.");
+        } catch (cropErr) {
+          console.warn("Region Capture crop failed, proceeding with full tab capture:", cropErr);
+        }
+      } else {
+        console.warn("Region Capture (cropTo) is not supported in this browser, recording full tab.");
+      }
+
       // Mix video and audio tracks
       const mixedStream = new MediaStream([
-        displayStream.getVideoTracks()[0],
+        videoTrack,
         dest.stream.getAudioTracks()[0]
       ]);
 
