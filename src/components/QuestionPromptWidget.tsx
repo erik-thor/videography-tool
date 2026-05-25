@@ -8,10 +8,10 @@ export const QuestionPromptWidget: React.FC = () => {
   return (
     <div
       style={{
-        borderLeft: '5px solid var(--terracotta)',
-        paddingLeft: '14px',
-        paddingTop: '4px',
-        paddingBottom: '4px',
+        borderLeft: '6px solid var(--terracotta)',
+        paddingLeft: '22px',
+        paddingTop: '6px',
+        paddingBottom: '6px',
         fontFamily: 'Lora, Georgia, serif',
         color: 'var(--warm-ink)',
         width: '100%',
@@ -20,7 +20,9 @@ export const QuestionPromptWidget: React.FC = () => {
       <textarea
         value={question}
         onChange={(e) => setQuestion(e.target.value)}
-        rows={3}
+        rows={4}
+        spellCheck={false}
+        data-enable-grammarly="false"
         style={{
           width: '100%',
           border: 'none',
@@ -28,7 +30,7 @@ export const QuestionPromptWidget: React.FC = () => {
           background: 'transparent',
           color: 'inherit',
           fontFamily: 'inherit',
-          fontSize: '17px',
+          fontSize: '24px',
           lineHeight: '1.6',
           fontWeight: 500,
           resize: 'none',

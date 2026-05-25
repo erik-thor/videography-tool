@@ -340,8 +340,8 @@ export const ChecklistWidget: React.FC = () => {
   };
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', fontFamily: 'Inter' }}>
-      <ul style={{ listStyle: 'none', display: 'flex', flexDirection: 'column', gap: '8px', maxHeight: '180px', overflowY: 'auto' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', fontFamily: 'Inter' }}>
+      <ul style={{ listStyle: 'none', display: 'flex', flexDirection: 'column', gap: '10px', maxHeight: '320px', overflowY: 'auto' }}>
         {items.map((item) => (
           <li
             key={item.id}
@@ -349,8 +349,9 @@ export const ChecklistWidget: React.FC = () => {
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'space-between',
-              fontSize: '16px',
+              fontSize: '22px',
               opacity: item.done ? 0.5 : 1,
+              padding: '4px 0',
             }}
           >
             <div
@@ -358,15 +359,15 @@ export const ChecklistWidget: React.FC = () => {
               style={{
                 display: 'flex',
                 alignItems: 'center',
-                gap: '8px',
+                gap: '12px',
                 cursor: 'pointer',
                 userSelect: 'none',
               }}
             >
               {item.done ? (
-                <CheckSquare size={16} style={{ color: 'var(--terracotta)' }} />
+                <CheckSquare size={22} style={{ color: 'var(--terracotta)' }} />
               ) : (
-                <Square size={16} />
+                <Square size={22} />
               )}
               <span style={{ textDecoration: item.done ? 'line-through' : 'none' }}>
                 {item.text}
@@ -380,28 +381,30 @@ export const ChecklistWidget: React.FC = () => {
                 color: 'var(--terracotta)',
                 opacity: 0.6,
                 cursor: 'pointer',
-                padding: '4px',
+                padding: '6px',
                 display: 'flex',
               }}
             >
-              <Trash2 size={12} />
+              <Trash2 size={16} />
             </button>
           </li>
         ))}
       </ul>
 
-      <form onSubmit={handleAddItem} style={{ display: 'flex', gap: '6px', marginTop: '6px' }}>
+      <form onSubmit={handleAddItem} style={{ display: 'flex', gap: '8px', marginTop: '10px' }}>
         <input
           type="text"
           value={newItemText}
           onChange={(e) => setNewItemText(e.target.value)}
           placeholder="New talking point..."
+          spellCheck={false}
+          data-enable-grammarly="false"
           style={{
             flex: 1,
-            padding: '6px 10px',
-            fontSize: '13px',
+            padding: '10px 14px',
+            fontSize: '18px',
             border: '1.2px solid var(--border-color)',
-            borderRadius: '4px',
+            borderRadius: '6px',
             outline: 'none',
             backgroundColor: 'transparent',
             color: 'var(--warm-ink)',
@@ -413,13 +416,15 @@ export const ChecklistWidget: React.FC = () => {
             background: 'var(--terracotta)',
             border: 'none',
             color: 'var(--warm-ivory)',
-            padding: '6px 10px',
-            borderRadius: '4px',
+            padding: '10px 16px',
+            borderRadius: '6px',
             cursor: 'pointer',
             display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
           }}
         >
-          <Plus size={16} />
+          <Plus size={20} />
         </button>
       </form>
     </div>
@@ -438,6 +443,8 @@ export const ScratchpadWidget: React.FC = () => {
         value={text}
         onChange={(e) => setText(e.target.value)}
         rows={8}
+        spellCheck={false}
+        data-enable-grammarly="false"
         style={{
           width: '100%',
           border: 'none',

@@ -13,7 +13,7 @@ const getYoutubeId = (url: string): string | null => {
 };
 
 export const MediaCanvasView: React.FC<MediaCanvasViewProps> = ({ theme }) => {
-  const [activeTab, setActiveTab] = useState<'image' | 'web'>('image');
+  const [activeTab, setActiveTab] = useState<'image' | 'web'>('web');
   const [imageSrc, setImageSrc] = useState<string>('');
   const [imageUrlInput, setImageUrlInput] = useState<string>('');
   const [webUrlInput, setWebUrlInput] = useState<string>('');

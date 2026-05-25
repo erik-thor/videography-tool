@@ -21,9 +21,10 @@ import {
   RotateCcw,
   Plus,
   Pencil,
+  Trash2,
 } from 'lucide-react';
 import type { WebcamPosition, WebcamStyle } from './WebcamSlot';
-import type { ViewMode, Scene } from '../App';
+import type { ViewMode, Scene, Project } from '../App';
 import { Soundboard } from './Soundboard';
 
 interface SidebarControlsProps {
@@ -65,6 +66,17 @@ interface SidebarControlsProps {
 
   isCollapsed: boolean;
   setIsCollapsed: (v: boolean) => void;
+
+  scriptText: string;
+  setScriptText: (text: string) => void;
+
+  // Projects Props
+  projects: Project[];
+  currentProjectId: string;
+  onSelectProject: (id: string) => void;
+  onCreateProject: (name: string) => void;
+  onRenameProject: (id: string, name: string) => void;
+  onDeleteProject: (id: string) => void;
 
   // Scene Manager Props
   scenes: Scene[];
@@ -163,6 +175,7 @@ const ScriptTab: React.FC<ScriptTabProps> = ({ fontSize, setFontSize, script, se
           value={script}
           onChange={e => setScript(e.target.value)}
           spellCheck={false}
+          data-enable-grammarly="false"
           style={{
             flex: 1,
             background: 'rgba(244,234,213,0.04)',
@@ -216,6 +229,14 @@ export const SidebarControls: React.FC<SidebarControlsProps> = ({
   toggleWidget,
   isCollapsed,
   setIsCollapsed,
+  scriptText,
+  setScriptText,
+  projects,
+  currentProjectId,
+  onSelectProject,
+  onCreateProject,
+  onRenameProject,
+  onDeleteProject,
   scenes,
   activeSceneId,
   onSelectScene,
@@ -240,9 +261,14 @@ export const SidebarControls: React.FC<SidebarControlsProps> = ({
   const [fontSize, setFontSize] = useState(13);
   const [editingSceneId, setEditingSceneId] = useState<string | null>(null);
   const [tempSceneName, setTempSceneName] = useState<string>('');
-  const [scriptText, setScriptText] = useState(
-    `RECORDING SCRIPT\n────────────────\n\n[INTRO] — 0:00–1:00\nIntroduce the topic.\n"Today I want to talk about..."\n\n[SECTION 1] — 1:00–5:00\nMain first point.\n- Sub-point A\n- Sub-point B\n\n[SECTION 2] — 5:00–9:00\nMain second point.\n- Sub-point A\n- Sub-point B`
-  );
+  const [editingProjectName, setEditingProjectName] = useState('');
+
+  useEffect(() => {
+    const p = projects.find(proj => proj.id === currentProjectId);
+    if (p) {
+      setEditingProjectName(p.name);
+    }
+  }, [currentProjectId, projects]);
 
   const [newSceneName, setNewSceneName] = useState('');
   const [devices, setDevices] = useState<MediaDeviceInfo[]>([]);
@@ -370,6 +396,115 @@ export const SidebarControls: React.FC<SidebarControlsProps> = ({
       {!isCollapsed && activeTab === 'canvas' && (
         <div style={{ flex: 1, overflowY: 'auto', padding: '14px', display: 'flex', flexDirection: 'column', gap: '18px' }}>
           
+          {/* Project Manager Section */}
+          <section>
+            <p className="sb-section-title">Project Manager</p>
+            <div style={{ display: 'flex', gap: '6px', marginBottom: '8px' }}>
+              <select
+                value={currentProjectId}
+                onChange={(e) => onSelectProject(e.target.value)}
+                style={{
+                  flex: 1,
+                  padding: '6px 8px',
+                  fontSize: '12px',
+                  background: 'rgba(244,234,213,0.05)',
+                  border: '1px solid rgba(244,234,213,0.12)',
+                  borderRadius: '5px',
+                  color: '#F4EAD5',
+                  outline: 'none',
+                }}
+              >
+                {projects.map(p => (
+                  <option key={p.id} value={p.id} style={{ background: '#2C1F15', color: '#F4EAD5' }}>
+                    📂 {p.name}
+                  </option>
+                ))}
+              </select>
+              
+              <button
+                onClick={() => {
+                  const name = prompt("Enter new project name:");
+                  if (name && name.trim()) {
+                    onCreateProject(name.trim());
+                  }
+                }}
+                title="New Project"
+                style={{
+                  background: 'var(--terracotta)',
+                  border: 'none',
+                  color: '#F4EAD5',
+                  borderRadius: '5px',
+                  padding: '6px 10px',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                }}
+              >
+                <Plus size={13} />
+              </button>
+            </div>
+
+            <div style={{ display: 'flex', gap: '6px' }}>
+              <input
+                type="text"
+                value={editingProjectName}
+                onChange={(e) => setEditingProjectName(e.target.value)}
+                placeholder="Rename project..."
+                style={{
+                  flex: 1,
+                  padding: '5px 8px',
+                  fontSize: '11px',
+                  background: 'rgba(244,234,213,0.05)',
+                  border: '1px solid rgba(244,234,213,0.12)',
+                  borderRadius: '5px',
+                  color: '#F4EAD5',
+                  outline: 'none',
+                }}
+              />
+              <button
+                onClick={() => {
+                  if (editingProjectName.trim()) {
+                    onRenameProject(currentProjectId, editingProjectName.trim());
+                  }
+                }}
+                style={{
+                  background: 'rgba(244,234,213,0.1)',
+                  border: '1px solid rgba(244,234,213,0.2)',
+                  color: '#F4EAD5',
+                  borderRadius: '5px',
+                  padding: '5px 8px',
+                  cursor: 'pointer',
+                  fontSize: '11px',
+                }}
+              >
+                Rename
+              </button>
+              {projects.length > 1 && (
+                <button
+                  onClick={() => {
+                    if (confirm("Are you sure you want to delete this project and all its scenes?")) {
+                      onDeleteProject(currentProjectId);
+                    }
+                  }}
+                  title="Delete current project"
+                  style={{
+                    background: 'rgba(232,176,154,0.15)',
+                    border: '1px solid rgba(232,176,154,0.3)',
+                    color: '#E8B09A',
+                    borderRadius: '5px',
+                    padding: '5px 8px',
+                    cursor: 'pointer',
+                    fontSize: '11px',
+                  }}
+                >
+                  <Trash2 size={12} />
+                </button>
+              )}
+            </div>
+          </section>
+
+          <div className="sb-divider" />
+
           {/* Scene Manager Section */}
           <section>
             <p className="sb-section-title">Scene Manager</p>

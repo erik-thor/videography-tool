@@ -38,6 +38,14 @@ export interface Scene {
   canvasStates?: { [key: string]: string };
 }
 
+export interface Project {
+  id: string;
+  name: string;
+  scenes: Scene[];
+  activeSceneId: string;
+  scriptText: string;
+}
+
 function App() {
   // Theme & Background State
   const [theme, setTheme] = useState<'light' | 'dark'>('light');
@@ -143,9 +151,137 @@ function App() {
     }
   ];
 
-  const [scenes, setScenes] = useState<Scene[]>(defaultScenes);
-  const [activeSceneId, setActiveSceneId] = useState<string>('scene-intro');
+  const [scriptText, setScriptText] = useState<string>('');
+
+  // Projects State
+  const [projects, setProjects] = useState<Project[]>(() => {
+    const saved = localStorage.getItem('video_journal_projects');
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        if (parsed && parsed.length > 0) return parsed;
+      } catch (e) {
+        console.error("Failed to parse projects:", e);
+      }
+    }
+    // Initial default project
+    const defaultProj = {
+      id: 'default-project',
+      name: 'Default Project',
+      scenes: defaultScenes,
+      activeSceneId: 'scene-intro',
+      scriptText: `RECORDING SCRIPT\n────────────────\n\n[INTRO] — 0:00–1:00\nIntroduce the topic.\n"Today I want to talk about..."\n\n[SECTION 1] — 1:00–5:00\nMain first point.\n- Sub-point A\n- Sub-point B\n\n[SECTION 2] — 5:00–9:00\nMain second point.\n- Sub-point A\n- Sub-point B`
+    };
+    return [defaultProj];
+  });
+
+  const [currentProjectId, setCurrentProjectId] = useState<string>(() => {
+    return localStorage.getItem('video_journal_current_project_id') || 'default-project';
+  });
+
+  const currentProject = projects.find(p => p.id === currentProjectId) || projects[0];
+
+  const [scenes, setScenes] = useState<Scene[]>(currentProject.scenes);
+  const [activeSceneId, setActiveSceneId] = useState<string>(currentProject.activeSceneId);
   const [isPageTurning, setIsPageTurning] = useState<boolean>(false);
+
+  // Sync state variables with active project on change
+  useEffect(() => {
+    if (currentProject) {
+      setScenes(currentProject.scenes);
+      setActiveSceneId(currentProject.activeSceneId);
+      setScriptText(currentProject.scriptText);
+    }
+  }, [currentProjectId]);
+
+  // Save current project state whenever its content changes
+  const saveCurrentProjectState = (updatedScenes: Scene[], updatedActiveSceneId: string, updatedScriptText: string) => {
+    setProjects(prev => {
+      const next = prev.map(p => {
+        if (p.id === currentProjectId) {
+          return {
+            ...p,
+            scenes: updatedScenes,
+            activeSceneId: updatedActiveSceneId,
+            scriptText: updatedScriptText
+          };
+        }
+        return p;
+      });
+      localStorage.setItem('video_journal_projects', JSON.stringify(next));
+      return next;
+    });
+  };
+
+  const handleSelectProject = (id: string) => {
+    // Save current drawings before leaving the project!
+    const currentCanvasStates: { [key: string]: string } = {};
+    const views: ViewMode[] = ['diagram', 'whiteboard', 'media', 'corkboard', 'bullet-journal', 'hero-journey'];
+    views.forEach(v => {
+      const canvasEl = document.querySelector(`[data-view="${v}"] canvas`) as HTMLCanvasElement | null;
+      if (canvasEl) {
+        currentCanvasStates[v] = canvasEl.toDataURL();
+      }
+    });
+    
+    const updatedScenes = scenes.map(s => {
+      if (s.id === activeSceneId) {
+        return { ...s, canvasStates: currentCanvasStates };
+      }
+      return s;
+    });
+
+    const savedProjects = projects.map(p => {
+      if (p.id === currentProjectId) {
+        return { ...p, scenes: updatedScenes, activeSceneId, scriptText };
+      }
+      return p;
+    });
+
+    setProjects(savedProjects);
+    localStorage.setItem('video_journal_projects', JSON.stringify(savedProjects));
+    
+    // Switch project
+    localStorage.setItem('video_journal_current_project_id', id);
+    setCurrentProjectId(id);
+  };
+
+  const handleCreateProject = (name: string) => {
+    const newId = 'project-' + Date.now();
+    const newProj = {
+      id: newId,
+      name,
+      scenes: defaultScenes,
+      activeSceneId: 'scene-intro',
+      scriptText: `RECORDING SCRIPT\n────────────────\n\n[INTRO] — 0:00–1:00\nIntroduce the topic.\n"Today I want to talk about..."`
+    };
+    
+    const updatedProjects = [...projects, newProj];
+    setProjects(updatedProjects);
+    localStorage.setItem('video_journal_projects', JSON.stringify(updatedProjects));
+    
+    // Switch to new project
+    localStorage.setItem('video_journal_current_project_id', newId);
+    setCurrentProjectId(newId);
+  };
+
+  const handleRenameProject = (id: string, newName: string) => {
+    const updated = projects.map(p => p.id === id ? { ...p, name: newName } : p);
+    setProjects(updated);
+    localStorage.setItem('video_journal_projects', JSON.stringify(updated));
+  };
+
+  const handleDeleteProject = (id: string) => {
+    if (projects.length <= 1) return;
+    const remaining = projects.filter(p => p.id !== id);
+    setProjects(remaining);
+    localStorage.setItem('video_journal_projects', JSON.stringify(remaining));
+    
+    // Switch to another project
+    const fallbackId = remaining[0].id;
+    localStorage.setItem('video_journal_current_project_id', fallbackId);
+    setCurrentProjectId(fallbackId);
+  };
 
   // Flashlight Spotlight State
   const [flashlightActive, setFlashlightActive] = useState<boolean>(false);
@@ -367,6 +503,16 @@ function App() {
     
     if (isPageTurning) return;
 
+    // Synchronously capture active drawings of the scene we are leaving
+    const currentCanvasStates: { [key: string]: string } = {};
+    const views: ViewMode[] = ['diagram', 'whiteboard', 'media', 'corkboard', 'bullet-journal', 'hero-journey'];
+    views.forEach(v => {
+      const canvasEl = document.querySelector(`[data-view="${v}"] canvas`) as HTMLCanvasElement | null;
+      if (canvasEl) {
+        currentCanvasStates[v] = canvasEl.toDataURL();
+      }
+    });
+
     // 1. Play page flip transition sound
     try {
       const { audioCtx } = getAudioMixer();
@@ -390,6 +536,15 @@ function App() {
 
     // 3. Swap scene state halfway through sweep (350ms)
     setTimeout(() => {
+      // Auto-save captured drawings of the left scene to the scenes list
+      const updatedScenes = scenes.map(s => {
+        if (s.id === activeSceneId) {
+          return { ...s, canvasStates: currentCanvasStates };
+        }
+        return s;
+      });
+
+      setScenes(updatedScenes);
       setActiveSceneId(sceneId);
       setViewMode(scene.viewMode);
       setDiagramType(scene.diagramType);
@@ -406,6 +561,9 @@ function App() {
           setWebcamPosition('bottom-left');
         }
       }
+
+      // Save updated project state (including old scene's drawings and new activeSceneId)
+      saveCurrentProjectState(updatedScenes, sceneId, scriptText);
     }, 350);
 
     // 4. Reset page turning state after sweep completes (800ms)
@@ -415,7 +573,9 @@ function App() {
   };
 
   const handleRenameScene = (id: string, newName: string) => {
-    setScenes(prev => prev.map(s => s.id === id ? { ...s, name: newName } : s));
+    const updated = scenes.map(s => s.id === id ? { ...s, name: newName } : s);
+    setScenes(updated);
+    saveCurrentProjectState(updated, activeSceneId, scriptText);
   };
 
   const handleSaveCurrentScene = (name: string) => {
@@ -441,8 +601,10 @@ function App() {
       canvasStates,
     };
 
-    setScenes(prev => [...prev, newScene]);
+    const updated = [...scenes, newScene];
+    setScenes(updated);
     setActiveSceneId(newScene.id);
+    saveCurrentProjectState(updated, newScene.id, scriptText);
   };
 
   const handleCanvasMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
@@ -488,6 +650,11 @@ function App() {
     setWhiteboardOnTop(next);
   };
 
+  const handleScriptTextChange = (text: string) => {
+    setScriptText(text);
+    saveCurrentProjectState(scenes, activeSceneId, text);
+  };
+
   return (
     <div className="app-shell">
       {/* ======================================================
@@ -522,6 +689,14 @@ function App() {
         toggleWidget={toggleWidget}
         isCollapsed={isSidebarCollapsed}
         setIsCollapsed={setIsSidebarCollapsed}
+        scriptText={scriptText}
+        setScriptText={handleScriptTextChange}
+        projects={projects}
+        currentProjectId={currentProjectId}
+        onSelectProject={handleSelectProject}
+        onCreateProject={handleCreateProject}
+        onRenameProject={handleRenameProject}
+        onDeleteProject={handleDeleteProject}
         scenes={scenes}
         activeSceneId={activeSceneId}
         onSelectScene={handleSelectScene}
@@ -717,22 +892,22 @@ function App() {
 
               {/* Draggable Widgets */}
               {widgetsVisible.timer && (
-                <DraggableWidget title="timer" defaultX={1560} defaultY={80} scale={scale} theme={theme} onClose={() => toggleWidget('timer')}>
+                <DraggableWidget title="timer" defaultX={1480} defaultY={80} scale={scale} theme={theme} onClose={() => toggleWidget('timer')}>
                   <TimerWidget theme={theme} />
                 </DraggableWidget>
               )}
               {widgetsVisible.checklist && (
-                <DraggableWidget title="agenda outline" defaultX={1560} defaultY={280} scale={scale} theme={theme} onClose={() => toggleWidget('checklist')}>
+                <DraggableWidget title="agenda outline" defaultX={1200} defaultY={280} scale={scale} theme={theme} width={680} onClose={() => toggleWidget('checklist')}>
                   <ChecklistWidget />
                 </DraggableWidget>
               )}
               {widgetsVisible.scratchpad && (
-                <DraggableWidget title="monologue scratches" defaultX={1560} defaultY={530} scale={scale} theme={theme} onClose={() => toggleWidget('scratchpad')}>
+                <DraggableWidget title="monologue scratches" defaultX={1480} defaultY={530} scale={scale} theme={theme} onClose={() => toggleWidget('scratchpad')}>
                   <ScratchpadWidget />
                 </DraggableWidget>
               )}
               {widgetsVisible.question && (
-                <DraggableWidget title="reflection prompt" defaultX={80} defaultY={80} scale={scale} theme={theme} width={560} onClose={() => toggleWidget('question')}>
+                <DraggableWidget title="reflection prompt" defaultX={80} defaultY={80} scale={scale} theme={theme} width={800} onClose={() => toggleWidget('question')}>
                   <QuestionPromptWidget />
                 </DraggableWidget>
               )}
