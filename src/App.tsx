@@ -13,6 +13,7 @@ import { HeroJourneyView } from './components/HeroJourneyView';
 import { DraggableWidget, TimerWidget, ChecklistWidget, ScratchpadWidget } from './components/Widgets';
 import { QuestionPromptWidget } from './components/QuestionPromptWidget';
 import { initAudio, TRANSITION_SOUNDS } from './utils/audioRegistry';
+import { IntroSceneView, AboutMeSceneView, PlanSceneView, OutroSceneView } from './components/CustomSceneViews';
 import {
   saveRecordingChunk,
   saveRecordingMetadata,
@@ -75,41 +76,8 @@ function App() {
   // Scenes State
   const defaultScenes: Scene[] = [
     {
-      id: 'scene-values',
-      name: 'Values Circle Diagram',
-      viewMode: 'diagram',
-      diagramType: 'circle',
-      whiteboardActive: false,
-      whiteboardOnTop: false,
-      flashlightActive: false,
-      widgetsVisible: { timer: false, checklist: true, scratchpad: false, question: false },
-      canvasStates: {}
-    },
-    {
-      id: 'scene-flowchart',
-      name: 'Flowchart Editor',
-      viewMode: 'diagram',
-      diagramType: 'flowchart',
-      whiteboardActive: false,
-      whiteboardOnTop: false,
-      flashlightActive: false,
-      widgetsVisible: { timer: false, checklist: true, scratchpad: false, question: false },
-      canvasStates: {}
-    },
-    {
-      id: 'scene-whiteboard',
-      name: 'Clean Whiteboard',
-      viewMode: 'whiteboard',
-      diagramType: 'circle',
-      whiteboardActive: true,
-      whiteboardOnTop: false,
-      flashlightActive: false,
-      widgetsVisible: { timer: false, checklist: false, scratchpad: false, question: false },
-      canvasStates: {}
-    },
-    {
-      id: 'scene-media',
-      name: 'Blank Media Canvas',
+      id: 'scene-intro',
+      name: 'Intro Title Card',
       viewMode: 'media',
       diagramType: 'circle',
       whiteboardActive: false,
@@ -119,9 +87,9 @@ function App() {
       canvasStates: {}
     },
     {
-      id: 'scene-corkboard',
-      name: 'Life Story Corkboard',
-      viewMode: 'corkboard',
+      id: 'scene-about-me',
+      name: 'About Erik Thor',
+      viewMode: 'media',
       diagramType: 'circle',
       whiteboardActive: false,
       whiteboardOnTop: false,
@@ -130,9 +98,42 @@ function App() {
       canvasStates: {}
     },
     {
-      id: 'scene-camera',
-      name: 'Fullscreen Camera',
-      viewMode: 'fullscreen-camera',
+      id: 'scene-plan',
+      name: 'Monologue Plan',
+      viewMode: 'media',
+      diagramType: 'circle',
+      whiteboardActive: false,
+      whiteboardOnTop: false,
+      flashlightActive: false,
+      widgetsVisible: { timer: false, checklist: true, scratchpad: false, question: false },
+      canvasStates: {}
+    },
+    {
+      id: 'scene-part1',
+      name: 'Part 1: Core Values',
+      viewMode: 'diagram',
+      diagramType: 'circle',
+      whiteboardActive: false,
+      whiteboardOnTop: false,
+      flashlightActive: false,
+      widgetsVisible: { timer: false, checklist: false, scratchpad: false, question: true },
+      canvasStates: {}
+    },
+    {
+      id: 'scene-part2',
+      name: 'Part 2: Process Flow',
+      viewMode: 'diagram',
+      diagramType: 'flowchart',
+      whiteboardActive: false,
+      whiteboardOnTop: false,
+      flashlightActive: false,
+      widgetsVisible: { timer: false, checklist: false, scratchpad: true, question: false },
+      canvasStates: {}
+    },
+    {
+      id: 'scene-outro',
+      name: 'Outro / Summary',
+      viewMode: 'media',
       diagramType: 'circle',
       whiteboardActive: false,
       whiteboardOnTop: false,
@@ -143,7 +144,7 @@ function App() {
   ];
 
   const [scenes, setScenes] = useState<Scene[]>(defaultScenes);
-  const [activeSceneId, setActiveSceneId] = useState<string>('scene-values');
+  const [activeSceneId, setActiveSceneId] = useState<string>('scene-intro');
   const [isPageTurning, setIsPageTurning] = useState<boolean>(false);
 
   // Flashlight Spotlight State
@@ -584,7 +585,17 @@ function App() {
 
               {/* MEDIA VIEW */}
               <div style={{ display: viewMode === 'media' ? 'block' : 'none', width: '100%', height: '100%', position: 'absolute', inset: 0 }}>
-                <MediaCanvasView theme={theme} />
+                {activeSceneId === 'scene-intro' ? (
+                  <IntroSceneView theme={theme} />
+                ) : activeSceneId === 'scene-about-me' ? (
+                  <AboutMeSceneView theme={theme} />
+                ) : activeSceneId === 'scene-plan' ? (
+                  <PlanSceneView theme={theme} />
+                ) : activeSceneId === 'scene-outro' ? (
+                  <OutroSceneView theme={theme} />
+                ) : (
+                  <MediaCanvasView theme={theme} />
+                )}
                 <WhiteboardCanvas
                   isActive={viewMode === 'media' && whiteboardActive}
                   drawOnTop={true}

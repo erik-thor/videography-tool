@@ -76,7 +76,7 @@ export const DraggableWidget: React.FC<DragProps> = ({
         position: 'absolute',
         left: `${pos.x}px`,
         top: `${pos.y}px`,
-        width: width ? `${width}px` : '320px',
+        width: width ? `${width}px` : '400px',
         // When dragging, elevate above the sidebar (z-index 200) so the widget is always visible
         zIndex: isDragging ? 9999 : 1000,
         border: '1px solid var(--border-color)',
@@ -232,7 +232,7 @@ export const TimerWidget: React.FC<{ theme: 'light' | 'dark' }> = ({ theme: _the
       <div
         style={{
           fontFamily: 'Lora, serif',
-          fontSize: '44px',
+          fontSize: '54px',
           fontWeight: 500,
           textAlign: 'center',
           padding: '10px 0',
@@ -349,7 +349,7 @@ export const ChecklistWidget: React.FC = () => {
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'space-between',
-              fontSize: '14px',
+              fontSize: '16px',
               opacity: item.done ? 0.5 : 1,
             }}
           >
@@ -437,7 +437,7 @@ export const ScratchpadWidget: React.FC = () => {
       <textarea
         value={text}
         onChange={(e) => setText(e.target.value)}
-        rows={6}
+        rows={8}
         style={{
           width: '100%',
           border: 'none',
@@ -445,7 +445,7 @@ export const ScratchpadWidget: React.FC = () => {
           resize: 'vertical',
           backgroundColor: 'transparent',
           fontFamily: 'inherit',
-          fontSize: '14px',
+          fontSize: '16px',
           lineHeight: '1.6',
           color: 'var(--warm-ink)',
         }}
@@ -465,7 +465,7 @@ export const VisualizerWidget: React.FC<{ theme: 'light' | 'dark' }> = ({ theme 
     if (!canvas) return;
     
     // Set size
-    canvas.width = 288; // 320 minus padding
+    canvas.width = 368; // 400 minus padding
     canvas.height = 80;
 
     let animId: number;
