@@ -214,11 +214,13 @@ function App() {
       const micSource = audioCtx.createMediaStreamSource(micStream);
       micSource.connect(dest);
 
-      // Capture Screen (hints browser to prefer tab capture)
+      // Capture Screen (hints browser to prefer tab capture and pre-selects current tab)
       const displayStream = await navigator.mediaDevices.getDisplayMedia({
         video: { width: 1920, height: 1080, displaySurface: "browser" },
-        audio: true
-      });
+        audio: true,
+        preferCurrentTab: true,
+        selfBrowserSurface: "include"
+      } as any);
       displayStreamRef.current = displayStream;
 
       if (displayStream.getAudioTracks().length > 0) {
