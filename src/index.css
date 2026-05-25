@@ -1,0 +1,408 @@
+/* Editorial Design System for Video Recording Panel */
+:root {
+  /* Brand Colors */
+  --warm-ivory: #F4EAD5;
+  --warm-ink: #2C1F15;
+  --blush-rose: #E8B09A;
+  --terracotta: #B8674A;
+  --warm-gold: #C9A563;
+  --sage: #8AA68E;
+  --slate-blue: #7B91B8;
+
+  /* Tag Color Ramps (Pastel background, Darkened-ramp text) */
+  --tag-blush-bg: #F5DDD4;
+  --tag-blush-text: #8C3A27;
+  
+  --tag-sage-bg: #E1EBE2;
+  --tag-sage-text: #2D4C38;
+  
+  --tag-slate-bg: #E2E7F0;
+  --tag-slate-text: #2C3E5A;
+
+  /* Gradients (135deg for single-direction, 90deg for horizontal banners) */
+  --gradient-dawn: linear-gradient(135deg, #F9F2E7, #E8B09A);
+  --gradient-ember: linear-gradient(135deg, #E8B09A, #B8674A);
+  --gradient-mediterranean: linear-gradient(135deg, #F0F4F1, #8AA68E);
+  --gradient-dusk: linear-gradient(135deg, #7B91B8, #2C1F15);
+  
+  /* Dark Gradients */
+  --gradient-nightfall: linear-gradient(135deg, #423225, #2C1F15);
+  --gradient-deep-water: linear-gradient(135deg, #364761, #1B2433);
+  
+  /* Multi-stop Gradients */
+  --gradient-solstice: linear-gradient(135deg, #E8B09A, #C9A563, #8AA68E);
+  --gradient-full-spectrum: linear-gradient(135deg, #B8674A, #C9A563, #8AA68E, #7B91B8);
+  --gradient-montserrat: linear-gradient(135deg, #E8B09A, #B8674A, #2C1F15);
+
+  /* Layout and UI Chrome */
+  --border-radius: 10px;
+  --border-color: rgba(44, 31, 21, 0.15);
+  --border-color-dark: rgba(244, 234, 213, 0.15);
+
+  /* Sidebar / chrome dimensions */
+  --sidebar-width: 280px;
+  --bottom-bar-height: 72px;
+}
+
+/* Base Settings */
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+html, body {
+  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  font-size: 16px;
+  font-weight: 400;
+  line-height: 1.6;
+  background-color: #16110d;
+  color: var(--warm-ink);
+  overflow: hidden;
+  height: 100vh;
+  width: 100vw;
+}
+
+/* Typography Rules */
+h1, h2, h3, h4, h5, h6 {
+  font-family: 'Lora', Georgia, serif;
+  font-weight: 500 !important;
+  color: inherit;
+}
+
+/* =====================================================================
+   TOP-LEVEL SHELL LAYOUT
+   The full viewport is split into:
+     [LEFT SIDEBAR] [RIGHT AREA]
+   The right area is split into:
+     [RECORDING CANVAS]
+     [BOTTOM TOOLBAR]
+   
+   The sidebar and bottom bar are OUTSIDE the 1920×1080 capturing region.
+   OBS only captures the .recording-canvas element.
+===================================================================== */
+
+.app-shell {
+  display: flex;
+  width: 100vw;
+  height: 100vh;
+  overflow: hidden;
+  background-color: #16110d;
+}
+
+/* ---- Left sidebar panel (outside OBS capture zone) ---- */
+.sidebar-panel {
+  flex-shrink: 0;
+  width: var(--sidebar-width);
+  height: 100vh;
+  background-color: #1e1510;
+  border-right: 1px solid rgba(244, 234, 213, 0.08);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  position: relative;
+  /* The sidebar is ABOVE the canvas in document stacking
+     but positioned outside the scaled canvas container */
+  z-index: 200;
+}
+
+.sidebar-panel.collapsed {
+  width: 52px;
+}
+
+/* ---- Right column: recording canvas + bottom toolbar ---- */
+.right-column {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  min-width: 0;
+}
+
+/* The scale-wrapper container: centers the 1920×1080 box */
+.canvas-area {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  position: relative;
+}
+
+/* ---- Bottom Toolbar (outside OBS capture zone) ---- */
+.bottom-toolbar {
+  flex-shrink: 0;
+  height: var(--bottom-bar-height);
+  background-color: #1e1510;
+  border-top: 1px solid rgba(244, 234, 213, 0.08);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 0 24px;
+  z-index: 200;
+}
+
+/* =====================================================================
+   RECORDING CANVAS (1920x1080 — the OBS captured area)
+===================================================================== */
+
+/* Scaling Container (16:9 1920x1080 Aspect Ratio Lock) */
+.scale-wrapper {
+  position: relative;
+  width: 1920px;
+  height: 1080px;
+  transform-origin: center center;
+  flex-shrink: 0;
+  overflow: hidden;
+  background-color: var(--warm-ivory);
+  /* Thin outline so you can see the boundary */
+  box-shadow: 0 0 0 1px rgba(244, 234, 213, 0.12);
+}
+
+/* Main workspace - 1920x1080 capturing viewport */
+.recording-canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background-color: var(--warm-ivory);
+  transition: background-color 0.3s ease;
+}
+
+/* Themes (Applying Dark/Light Modes to Canvas) */
+.recording-canvas.theme-light {
+  background-color: var(--warm-ivory);
+  color: var(--warm-ink);
+}
+
+.recording-canvas.theme-dark {
+  background-color: var(--warm-ink);
+  color: var(--warm-ivory);
+}
+
+/* Chrome-less UI Elements (No shadows, flat borders) */
+.editorial-panel {
+  border: 1px solid var(--border-color);
+  background-color: rgba(244, 234, 213, 0.88);
+  backdrop-filter: blur(10px);
+  border-radius: var(--border-radius);
+  transition: all 0.2s ease;
+}
+
+.recording-canvas.theme-dark .editorial-panel {
+  border: 1px solid var(--border-color-dark);
+  background-color: rgba(44, 31, 21, 0.88);
+}
+
+/* Tags and Pills */
+.tag {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 10px;
+  border-radius: 20px;
+  font-size: 13px;
+  font-weight: 500;
+  font-family: 'Inter', sans-serif;
+  text-transform: lowercase;
+}
+
+.tag-blush {
+  background-color: var(--tag-blush-bg);
+  color: var(--tag-blush-text);
+}
+
+.tag-sage {
+  background-color: var(--tag-sage-bg);
+  color: var(--tag-sage-text);
+}
+
+.tag-slate {
+  background-color: var(--tag-slate-bg);
+  color: var(--tag-slate-text);
+}
+
+/* Custom Scrollbars */
+::-webkit-scrollbar {
+  width: 5px;
+  height: 5px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(244, 234, 213, 0.15);
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(244, 234, 213, 0.3);
+}
+
+/* Whiteboard Pencil / Pointer states */
+.canvas-interactive {
+  cursor: crosshair;
+}
+
+/* Interactive circles and maps animations */
+.interactive-node {
+  transition: transform 0.2s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.2s ease;
+  cursor: pointer;
+}
+
+.interactive-node:hover {
+  transform: scale(1.05);
+}
+
+/* SVG Line connector styling */
+.connector-line {
+  stroke: var(--warm-ink);
+  stroke-dasharray: 4 4;
+  animation: dash 30s linear infinite;
+}
+
+.theme-dark .connector-line {
+  stroke: var(--warm-ivory);
+}
+
+@keyframes dash {
+  to {
+    stroke-dashoffset: -1000;
+  }
+}
+
+/* =====================================================================
+   SIDEBAR DARK THEME (sidebar is always dark — outside the canvas theme)
+===================================================================== */
+.sidebar-panel {
+  --sb-text: rgba(244, 234, 213, 0.85);
+  --sb-text-dim: rgba(244, 234, 213, 0.4);
+  --sb-border: rgba(244, 234, 213, 0.08);
+  --sb-hover: rgba(244, 234, 213, 0.05);
+  --sb-active: rgba(184, 103, 74, 0.25);
+  color: var(--sb-text);
+  font-family: 'Inter', sans-serif;
+}
+
+.sb-section-title {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 1.2px;
+  color: var(--sb-text-dim);
+  margin-bottom: 8px;
+  font-family: 'Inter', sans-serif;
+}
+
+.sb-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 8px 12px;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  color: var(--sb-text);
+  font-size: 13px;
+  font-family: 'Inter', sans-serif;
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.sb-btn:hover {
+  background: var(--sb-hover);
+}
+
+.sb-btn.active {
+  background: var(--sb-active);
+  border-color: rgba(184, 103, 74, 0.5);
+  color: #E8B09A;
+}
+
+.sb-btn.active-blue {
+  background: rgba(123, 145, 184, 0.2);
+  border-color: rgba(123, 145, 184, 0.4);
+  color: #7B91B8;
+}
+
+.sb-divider {
+  height: 1px;
+  background-color: var(--sb-border);
+  margin: 4px 0;
+}
+
+/* =====================================================================
+   BOTTOM TOOLBAR STYLES
+===================================================================== */
+.bottom-toolbar .tb-btn {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 14px;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  color: rgba(244, 234, 213, 0.7);
+  font-size: 13px;
+  font-family: 'Inter', sans-serif;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+  white-space: nowrap;
+}
+
+.bottom-toolbar .tb-btn:hover {
+  background: rgba(244, 234, 213, 0.07);
+  color: rgba(244, 234, 213, 0.95);
+}
+
+.bottom-toolbar .tb-btn.active {
+  background: rgba(184, 103, 74, 0.25);
+  border-color: rgba(184, 103, 74, 0.5);
+  color: #E8B09A;
+}
+
+.bottom-toolbar .tb-divider {
+  width: 1px;
+  height: 28px;
+  background: rgba(244, 234, 213, 0.1);
+  flex-shrink: 0;
+}
+
+.bottom-toolbar .color-dot {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: 2px solid transparent;
+  cursor: pointer;
+  transition: transform 0.12s ease, border-color 0.12s ease;
+  flex-shrink: 0;
+}
+
+.bottom-toolbar .color-dot:hover {
+  transform: scale(1.2);
+}
+
+.bottom-toolbar .color-dot.selected {
+  border-color: rgba(244, 234, 213, 0.9);
+  transform: scale(1.25);
+}
+
+.bottom-toolbar .size-dot {
+  border-radius: 50%;
+  background-color: rgba(244, 234, 213, 0.7);
+  cursor: pointer;
+  transition: opacity 0.12s ease, outline 0.12s ease;
+  flex-shrink: 0;
+}
+
+.bottom-toolbar .size-dot.selected {
+  background-color: #E8B09A;
+  outline: 2px solid rgba(184, 103, 74, 0.8);
+  outline-offset: 2px;
+}
