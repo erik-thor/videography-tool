@@ -12,13 +12,15 @@ import { BulletJournalView } from './components/BulletJournalView';
 import { HeroJourneyView } from './components/HeroJourneyView';
 import { DraggableWidget, TimerWidget, ChecklistWidget, ScratchpadWidget } from './components/Widgets';
 import { QuestionPromptWidget } from './components/QuestionPromptWidget';
+import { initAudio, TRANSITION_SOUNDS } from './utils/audioRegistry';
 import {
   saveRecordingChunk,
   saveRecordingMetadata,
   getRecordingChunks,
   clearRecordingChunks,
   getAudioMixer,
-  checkRecoverableChunks
+  checkRecoverableChunks,
+  setSoundboardVolume
 } from './utils/videoRecorder';
 
 export type ViewMode = 'diagram' | 'whiteboard' | 'media' | 'corkboard' | 'bullet-journal' | 'hero-journey' | 'fullscreen-camera';
@@ -142,6 +144,7 @@ function App() {
 
   const [scenes, setScenes] = useState<Scene[]>(defaultScenes);
   const [activeSceneId, setActiveSceneId] = useState<string>('scene-values');
+  const [isPageTurning, setIsPageTurning] = useState<boolean>(false);
 
   // Flashlight Spotlight State
   const [flashlightActive, setFlashlightActive] = useState<boolean>(false);
@@ -361,22 +364,57 @@ function App() {
     const scene = scenes.find(s => s.id === sceneId);
     if (!scene) return;
     
-    setActiveSceneId(sceneId);
-    setViewMode(scene.viewMode);
-    setDiagramType(scene.diagramType);
-    setWhiteboardActive(scene.whiteboardActive);
-    setWhiteboardOnTop(scene.whiteboardOnTop);
-    setFlashlightActive(scene.flashlightActive);
-    setWidgetsVisible(scene.widgetsVisible);
+    if (isPageTurning) return;
 
-    if (scene.viewMode === 'fullscreen-camera') {
-      setWebcamPosition('fullscreen');
-      setWebcamVisible(true);
-    } else {
-      if (webcamPosition === 'fullscreen') {
-        setWebcamPosition('bottom-left');
+    // 1. Play page flip transition sound
+    try {
+      const { audioCtx } = getAudioMixer();
+      if (audioCtx.state === 'suspended') {
+        audioCtx.resume();
       }
+    } catch (e) {
+      console.warn("Could not resume AudioContext on page flip:", e);
     }
+    const sound = TRANSITION_SOUNDS.pageFlip;
+    const audio = initAudio(sound, false);
+    audio.currentTime = 0;
+    audio.volume = 0.8;
+    setSoundboardVolume('page-flip', 0.8);
+    audio.play().catch(err => {
+      console.warn('Could not play page flip sound:', err);
+    });
+
+    // 2. Trigger visual transition
+    setIsPageTurning(true);
+
+    // 3. Swap scene state halfway through sweep (350ms)
+    setTimeout(() => {
+      setActiveSceneId(sceneId);
+      setViewMode(scene.viewMode);
+      setDiagramType(scene.diagramType);
+      setWhiteboardActive(scene.whiteboardActive);
+      setWhiteboardOnTop(scene.whiteboardOnTop);
+      setFlashlightActive(scene.flashlightActive);
+      setWidgetsVisible(scene.widgetsVisible);
+
+      if (scene.viewMode === 'fullscreen-camera') {
+        setWebcamPosition('fullscreen');
+        setWebcamVisible(true);
+      } else {
+        if (webcamPosition === 'fullscreen') {
+          setWebcamPosition('bottom-left');
+        }
+      }
+    }, 350);
+
+    // 4. Reset page turning state after sweep completes (800ms)
+    setTimeout(() => {
+      setIsPageTurning(false);
+    }, 800);
+  };
+
+  const handleRenameScene = (id: string, newName: string) => {
+    setScenes(prev => prev.map(s => s.id === id ? { ...s, name: newName } : s));
   };
 
   const handleSaveCurrentScene = (name: string) => {
@@ -487,6 +525,7 @@ function App() {
         activeSceneId={activeSceneId}
         onSelectScene={handleSelectScene}
         onSaveCurrentScene={handleSaveCurrentScene}
+        onRenameScene={handleRenameScene}
         recordingStatus={recordingStatus}
         recordingName={recordingName}
         setRecordingName={setRecordingName}
@@ -682,10 +721,15 @@ function App() {
                 </DraggableWidget>
               )}
               {widgetsVisible.question && (
-                <DraggableWidget title="reflection prompt" defaultX={80} defaultY={80} scale={scale} theme={theme} onClose={() => toggleWidget('question')}>
+                <DraggableWidget title="reflection prompt" defaultX={80} defaultY={80} scale={scale} theme={theme} width={560} onClose={() => toggleWidget('question')}>
                   <QuestionPromptWidget />
                 </DraggableWidget>
               )}
+
+              {/* Page-Turn Transition Overlay */}
+              <div className={`page-turn-overlay ${isPageTurning ? 'active' : ''}`}>
+                <div className="page-turn-sheet" />
+              </div>
             </div>
           </div>
         </div>

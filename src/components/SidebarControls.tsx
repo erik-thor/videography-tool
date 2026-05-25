@@ -20,6 +20,7 @@ import {
   AlertTriangle,
   RotateCcw,
   Plus,
+  Pencil,
 } from 'lucide-react';
 import type { WebcamPosition, WebcamStyle } from './WebcamSlot';
 import type { ViewMode, Scene } from '../App';
@@ -27,22 +28,28 @@ import { Soundboard } from './Soundboard';
 
 interface SidebarControlsProps {
   theme: 'light' | 'dark';
-  setTheme: (theme: 'light' | 'dark') => void;
+  setTheme: (t: 'light' | 'dark') => void;
   backgroundMode: string;
-  setBackgroundMode: (bg: string) => void;
+  setBackgroundMode: (m: string) => void;
 
   viewMode: ViewMode;
   setViewMode: (mode: ViewMode) => void;
-
   diagramType: 'circle' | 'flowchart';
-  setDiagramType: (type: 'circle' | 'flowchart') => void;
+  setDiagramType: (t: 'circle' | 'flowchart') => void;
+  whiteboardActive: boolean;
+  whiteboardOnTop: boolean;
+  onToggleDrawOnDiagram: () => void;
+  triggerClearWhiteboard: () => void;
+
+  flashlightActive: boolean;
+  setFlashlightActive: (v: boolean) => void;
 
   webcamVisible: boolean;
-  setWebcamVisible: (visible: boolean) => void;
+  setWebcamVisible: (v: boolean) => void;
   webcamPosition: WebcamPosition;
-  setWebcamPosition: (pos: WebcamPosition) => void;
+  setWebcamPosition: (p: WebcamPosition) => void;
   webcamStyle: WebcamStyle;
-  setWebcamStyle: (style: WebcamStyle) => void;
+  setWebcamStyle: (s: WebcamStyle) => void;
   webcamWidth: number;
   setWebcamWidth: (w: number) => void;
   webcamHeight: number;
@@ -64,6 +71,7 @@ interface SidebarControlsProps {
   activeSceneId: string;
   onSelectScene: (id: string) => void;
   onSaveCurrentScene: (name: string) => void;
+  onRenameScene?: (id: string, name: string) => void;
 
   // Recording Props
   recordingStatus: 'idle' | 'recording' | 'paused';
@@ -88,11 +96,10 @@ const gradientsList = [
   { name: 'Ember', value: 'var(--gradient-ember)' },
   { name: 'Mediterranean', value: 'var(--gradient-mediterranean)' },
   { name: 'Dusk', value: 'var(--gradient-dusk)' },
-  { name: 'Nightfall', value: 'var(--gradient-nightfall)' },
-  { name: 'Deep Water', value: 'var(--gradient-deep-water)' },
-  { name: 'Solstice', value: 'var(--gradient-solstice)' },
-  { name: 'Full Spectrum', value: 'var(--gradient-full-spectrum)' },
-  { name: 'Montserrat', value: 'var(--gradient-montserrat)' },
+  { name: 'Forest', value: 'var(--gradient-forest)' },
+  { name: 'Ocean', value: 'var(--gradient-ocean)' },
+  { name: 'Royal', value: 'var(--gradient-royal)' },
+  { name: 'Warm Ivory', value: 'var(--gradient-ivory)' },
 ];
 
 const selectStyle: React.CSSProperties = {
@@ -213,6 +220,7 @@ export const SidebarControls: React.FC<SidebarControlsProps> = ({
   activeSceneId,
   onSelectScene,
   onSaveCurrentScene,
+  onRenameScene,
   recordingStatus,
   recordingName,
   setRecordingName,
@@ -230,6 +238,8 @@ export const SidebarControls: React.FC<SidebarControlsProps> = ({
 }) => {
   const [activeTab, setActiveTab] = useState<'canvas' | 'script' | 'record'>('canvas');
   const [fontSize, setFontSize] = useState(13);
+  const [editingSceneId, setEditingSceneId] = useState<string | null>(null);
+  const [tempSceneName, setTempSceneName] = useState<string>('');
   const [scriptText, setScriptText] = useState(
     `RECORDING SCRIPT\n────────────────\n\n[INTRO] — 0:00–1:00\nIntroduce the topic.\n"Today I want to talk about..."\n\n[SECTION 1] — 1:00–5:00\nMain first point.\n- Sub-point A\n- Sub-point B\n\n[SECTION 2] — 5:00–9:00\nMain second point.\n- Sub-point A\n- Sub-point B`
   );
@@ -368,20 +378,101 @@ export const SidebarControls: React.FC<SidebarControlsProps> = ({
             <div style={{ display: 'flex', flexDirection: 'column', gap: '5px', marginBottom: '10px' }}>
               {scenes.map(s => {
                 const isActive = activeSceneId === s.id;
+                const isEditing = editingSceneId === s.id;
                 return (
-                  <button
+                  <div
                     key={s.id}
                     className={`sb-btn ${isActive ? 'active' : ''}`}
-                    onClick={() => onSelectScene(s.id)}
+                    onClick={() => {
+                      if (!isEditing) {
+                        onSelectScene(s.id);
+                      }
+                    }}
                     style={{
+                      display: 'flex',
+                      alignItems: 'center',
                       justifyContent: 'space-between',
                       fontSize: '12px',
                       padding: '6px 10px',
+                      cursor: isEditing ? 'default' : 'pointer',
+                      width: '100%',
+                      boxSizing: 'border-box',
                     }}
                   >
-                    <span>🎬 {s.name}</span>
-                    <span style={{ fontSize: '9px', opacity: 0.5 }}>{s.viewMode}</span>
-                  </button>
+                    {isEditing ? (
+                      <input
+                        type="text"
+                        value={tempSceneName}
+                        onChange={(e) => setTempSceneName(e.target.value)}
+                        onBlur={() => {
+                          if (tempSceneName.trim()) {
+                            onRenameScene?.(s.id, tempSceneName.trim());
+                          }
+                          setEditingSceneId(null);
+                        }}
+                        onKeyDown={(e) => {
+                          e.stopPropagation();
+                          if (e.key === 'Enter') {
+                            if (tempSceneName.trim()) {
+                              onRenameScene?.(s.id, tempSceneName.trim());
+                            }
+                            setEditingSceneId(null);
+                          } else if (e.key === 'Escape') {
+                            setEditingSceneId(null);
+                          }
+                        }}
+                        onClick={(e) => e.stopPropagation()}
+                        autoFocus
+                        style={{
+                          flex: 1,
+                          fontSize: '12px',
+                          background: 'rgba(0, 0, 0, 0.25)',
+                          border: '1px solid var(--terracotta)',
+                          borderRadius: '4px',
+                          color: '#F4EAD5',
+                          padding: '2px 6px',
+                          outline: 'none',
+                          marginRight: '8px',
+                          minWidth: '50px',
+                        }}
+                      />
+                    ) : (
+                      <span style={{ display: 'flex', alignItems: 'center', gap: '6px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1, marginRight: '4px' }}>
+                        <span>🎬</span>
+                        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{s.name}</span>
+                      </span>
+                    )}
+
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0 }}>
+                      {!isEditing && (
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setEditingSceneId(s.id);
+                            setTempSceneName(s.name);
+                          }}
+                          title="Rename scene"
+                          style={{
+                            background: 'transparent',
+                            border: 'none',
+                            color: '#F4EAD5',
+                            opacity: 0.5,
+                            cursor: 'pointer',
+                            display: 'flex',
+                            alignItems: 'center',
+                            padding: '2px',
+                          }}
+                          onMouseEnter={(e) => (e.currentTarget.style.opacity = '1')}
+                          onMouseLeave={(e) => (e.currentTarget.style.opacity = '0.5')}
+                        >
+                          <Pencil size={11} />
+                        </button>
+                      )}
+                      <span style={{ fontSize: '9px', opacity: 0.5 }}>
+                        {s.viewMode === 'fullscreen-camera' ? 'camera' : s.viewMode}
+                      </span>
+                    </div>
+                  </div>
                 );
               })}
             </div>

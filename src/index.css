@@ -412,3 +412,67 @@ h1, h2, h3, h4, h5, h6 {
   50% { opacity: 0.4; }
   100% { opacity: 1; }
 }
+
+/* =====================================================================
+   PAGE-TURN TRANSITION (THE EDITORIAL FLIP)
+   ===================================================================== */
+.page-turn-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 9999;
+  pointer-events: none;
+  overflow: hidden;
+  display: none;
+}
+
+.page-turn-overlay.active {
+  display: block;
+}
+
+.page-turn-sheet {
+  position: absolute;
+  top: -10%;
+  left: 100%;
+  width: 140%;
+  height: 120%;
+  transform: skewX(-12deg);
+  box-shadow: -15px 0 35px rgba(0, 0, 0, 0.35);
+  pointer-events: none;
+  animation: pageTurnSweep 0.8s cubic-bezier(0.2, 0.8, 0.2, 1) forwards;
+  will-change: left;
+}
+
+/* Light theme sheet style */
+.theme-light .page-turn-sheet {
+  background: linear-gradient(
+    to right,
+    rgba(0, 0, 0, 0.2) 0%,
+    rgba(232, 176, 154, 0.6) 1.5%, /* Blush Rose highlight on fold */
+    #E8B09A 3%,                     /* Blush Rose core back-page */
+    #C9A563 8%,                     /* Warm Gold secondary back-page */
+    #F4EAD5 18%,                    /* Settling into Warm Ivory */
+    #F4EAD5 100%
+  );
+}
+
+/* Dark theme sheet style */
+.theme-dark .page-turn-sheet {
+  background: linear-gradient(
+    to right,
+    rgba(0, 0, 0, 0.45) 0%,
+    rgba(184, 103, 74, 0.6) 1.5%,  /* Terracotta highlight on fold */
+    #B8674A 3%,                     /* Terracotta core back-page */
+    #C9A563 8%,                     /* Warm Gold secondary back-page */
+    #2C1F15 18%,                    /* Settling into Warm Ink */
+    #2C1F15 100%
+  );
+}
+
+@keyframes pageTurnSweep {
+  0% {
+    left: 100%;
+  }
+  100% {
+    left: -150%;
+  }
+}

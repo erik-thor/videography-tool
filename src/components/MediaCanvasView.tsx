@@ -19,6 +19,8 @@ export const MediaCanvasView: React.FC<MediaCanvasViewProps> = ({ theme }) => {
   const [webUrlInput, setWebUrlInput] = useState<string>('');
   const [loadedWebUrl, setLoadedWebUrl] = useState<string>('');
   const [youtubeId, setYoutubeId] = useState<string | null>(null);
+  const [inputWarning, setInputWarning] = useState<string>('');
+  const [imageError, setImageError] = useState<boolean>(false);
 
   const isDark = theme === 'dark';
   const bg = isDark ? '#2C1F15' : '#F4EAD5';
@@ -26,21 +28,56 @@ export const MediaCanvasView: React.FC<MediaCanvasViewProps> = ({ theme }) => {
   const dim = isDark ? 'rgba(244,234,213,0.4)' : 'rgba(44,31,21,0.4)';
   const border = isDark ? 'rgba(244,234,213,0.15)' : 'rgba(44,31,21,0.15)';
 
+  const checkLocalPathWarning = (val: string): boolean => {
+    const isLocalPath = /^[a-zA-Z]:[/\\]/i.test(val) || val.includes('\\') || val.startsWith('file:///');
+    if (isLocalPath) {
+      setInputWarning("Local file paths (e.g., C:/...) cannot be loaded directly due to browser security restrictions. Please use the file upload box above to load local files.");
+      return true;
+    }
+    setInputWarning('');
+    return false;
+  };
+
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
       const url = URL.createObjectURL(file);
       setImageSrc(url);
+      setImageError(false);
+      setInputWarning('');
     }
   };
 
   const handleLoadImageUrl = () => {
-    if (imageUrlInput.trim()) setImageSrc(imageUrlInput.trim());
+    const val = imageUrlInput.trim();
+    if (!val) return;
+    setImageError(false);
+    setInputWarning('');
+    
+    if (checkLocalPathWarning(val)) return;
+
+    // Check if it looks like a website URL or localhost/server rather than an image
+    const looksLikeWeb = /^(https?:\/\/)?(localhost|127\.0\.0\.1|([a-zA-Z0-9-]+\.)+[a-zA-Z]{2,})(:\d+)?/i.test(val) && !/\.(jpeg|jpg|gif|png|webp|svg|bmp|ico)(?:\?.*)?$/i.test(val);
+    if (looksLikeWeb) {
+      setInputWarning("This looks like a website or server URL. If you want to embed a website or YouTube video, please use the 'Website / YouTube' tab.");
+      return;
+    }
+
+    let finalUrl = val;
+    if (/^[a-zA-Z0-9-]+\.[a-zA-Z]{2,}/i.test(val) && !/^https?:\/\//i.test(val)) {
+      finalUrl = 'https://' + val;
+    }
+    setImageSrc(finalUrl);
   };
 
   const handleLoadWebUrl = () => {
     let url = webUrlInput.trim();
     if (!url) return;
+    setImageError(false);
+    setInputWarning('');
+
+    if (checkLocalPathWarning(url)) return;
+
     if (!/^https?:\/\//i.test(url)) {
       if (/^(localhost|127\.0\.0\.1)(:\d+)?/i.test(url)) {
         url = 'http://' + url;
@@ -58,6 +95,8 @@ export const MediaCanvasView: React.FC<MediaCanvasViewProps> = ({ theme }) => {
     setYoutubeId(null);
     setWebUrlInput('');
     setImageUrlInput('');
+    setInputWarning('');
+    setImageError(false);
   };
 
   // Shared input + button row styles
@@ -121,11 +160,28 @@ export const MediaCanvasView: React.FC<MediaCanvasViewProps> = ({ theme }) => {
       {(imageSrc || loadedWebUrl) ? (
         <div style={{ position: 'absolute', inset: 0 }}>
           {imageSrc ? (
-            <img
-              src={imageSrc}
-              alt="Media overlay"
-              style={{ width: '100%', height: '100%', objectFit: 'contain', display: 'block' }}
-            />
+            imageError ? (
+              <div style={{
+                position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '24px', textAlign: 'center', backgroundColor: bg, color: text
+              }}>
+                <div style={{ maxWidth: '500px', display: 'flex', flexDirection: 'column', gap: '16px', alignItems: 'center' }}>
+                  <span style={{ fontSize: '48px' }}>⚠️</span>
+                  <h3 style={{ fontSize: '20px', fontFamily: 'Lora, serif' }}>Failed to Load Image</h3>
+                  <p style={{ fontSize: '14px', color: dim, lineHeight: '1.6' }}>
+                    The browser refused to load the image URL you provided.
+                    If this is a local path (e.g. <code>C:/...</code>), browsers block it due to web security policies. Please use the <strong>Click to upload image or screenshot</strong> box above to load local files.
+                  </p>
+                  <button onClick={handleClearMedia} style={btnStyle}>Go Back</button>
+                </div>
+              </div>
+            ) : (
+              <img
+                src={imageSrc}
+                alt="Media overlay"
+                onError={() => setImageError(true)}
+                style={{ width: '100%', height: '100%', objectFit: 'contain', display: 'block' }}
+              />
+            )
           ) : youtubeId ? (
             <iframe
               src={`https://www.youtube.com/embed/${youtubeId}?autoplay=0&rel=0`}
@@ -178,6 +234,23 @@ export const MediaCanvasView: React.FC<MediaCanvasViewProps> = ({ theme }) => {
             gap: '28px',
           }}
         >
+          {/* Warning Banner */}
+          {inputWarning && (
+            <div
+              style={{
+                padding: '12px 16px',
+                background: 'rgba(184, 103, 74, 0.12)',
+                border: '1px solid rgba(184, 103, 74, 0.3)',
+                borderRadius: '8px',
+                color: 'var(--terracotta)',
+                fontSize: '13px',
+                lineHeight: '1.5',
+                fontFamily: 'Inter, sans-serif',
+              }}
+            >
+              ⚠️ {inputWarning}
+            </div>
+          )}
           {/* Header */}
           <div style={{ textAlign: 'center' }}>
             <h2 style={{ fontSize: '28px', fontFamily: 'Lora, serif', color: text, marginBottom: '8px' }}>
@@ -283,6 +356,20 @@ export const MediaCanvasView: React.FC<MediaCanvasViewProps> = ({ theme }) => {
                   <Globe size={14} />
                   Embed
                 </button>
+              </div>
+
+              <div style={{
+                fontSize: '12px',
+                color: dim,
+                lineHeight: '1.6',
+                fontFamily: 'Inter, sans-serif',
+                marginTop: '4px',
+                padding: '10px 14px',
+                backgroundColor: isDark ? 'rgba(244, 234, 213, 0.03)' : 'rgba(44, 31, 21, 0.03)',
+                borderRadius: '8px',
+                border: `1px solid ${border}`
+              }}>
+                ℹ️ <strong>Note on Embedding:</strong> Many websites (e.g. Google, GitHub, and major blogs) block iframe embedding for security (via <code>X-Frame-Options</code> or <code>Content-Security-Policy</code> headers). Local servers (e.g. <code>http://localhost:3000</code>) will embed correctly if they are running and allow framing.
               </div>
             </div>
           )}

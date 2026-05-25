@@ -115,9 +115,9 @@ export const BottomToolbar: React.FC<BottomToolbarProps> = ({
             className={`tb-btn ${viewMode === mode ? 'active' : ''}`}
             onClick={() => setViewMode(mode)}
             title={label}
+            style={{ padding: '8px 10px' }}
           >
             {icon}
-            <span>{label}</span>
           </button>
         ))}
       </div>
@@ -128,11 +128,8 @@ export const BottomToolbar: React.FC<BottomToolbarProps> = ({
           <button
             className={`tb-btn ${whiteboardActive ? 'active' : ''}`}
             onClick={onToggleDrawOnDiagram}
-            title={`Draw over ${viewMode}`}
-          >
-            <Pencil size={14} />
-            <span>
-              {whiteboardActive
+            title={
+              whiteboardActive
                 ? 'Stop Drawing'
                 : viewMode === 'diagram'
                 ? 'Draw on Diagram'
@@ -142,8 +139,11 @@ export const BottomToolbar: React.FC<BottomToolbarProps> = ({
                 ? 'Draw on Media'
                 : viewMode === 'corkboard'
                 ? 'Draw on Corkboard'
-                : 'Draw on Journey'}
-            </span>
+                : 'Draw on Journey'
+            }
+            style={{ padding: '8px 10px' }}
+          >
+            <Pencil size={14} />
           </button>
         )}
 
@@ -151,26 +151,26 @@ export const BottomToolbar: React.FC<BottomToolbarProps> = ({
           className={`tb-btn ${flashlightActive ? 'active' : ''}`}
           onClick={() => setFlashlightActive(!flashlightActive)}
           title="Spotlight / Flashlight"
+          style={{ padding: '8px 10px' }}
         >
           <Zap size={14} />
-          <span>Spotlight</span>
         </button>
 
         {isDrawingActive && (
           <>
             <div className="tb-divider" />
 
-            <button className={`tb-btn ${brushType === 'pencil' ? 'active' : ''}`} onClick={() => setBrushType('pencil')} title="Pencil">
-              <Pencil size={14} /><span>Pencil</span>
+            <button className={`tb-btn ${brushType === 'pencil' ? 'active' : ''}`} onClick={() => setBrushType('pencil')} title="Pencil" style={{ padding: '8px 10px' }}>
+              <Pencil size={14} />
             </button>
-            <button className={`tb-btn ${brushType === 'highlighter' ? 'active' : ''}`} onClick={() => setBrushType('highlighter')} title="Marker">
-              <Highlighter size={14} /><span>Marker</span>
+            <button className={`tb-btn ${brushType === 'highlighter' ? 'active' : ''}`} onClick={() => setBrushType('highlighter')} title="Marker" style={{ padding: '8px 10px' }}>
+              <Highlighter size={14} />
             </button>
-            <button className={`tb-btn ${brushType === 'text' ? 'active' : ''}`} onClick={() => setBrushType('text')} title="Text">
-              <Type size={14} /><span>Text</span>
+            <button className={`tb-btn ${brushType === 'text' ? 'active' : ''}`} onClick={() => setBrushType('text')} title="Text (Click to type)" style={{ padding: '8px 10px' }}>
+              <Type size={14} />
             </button>
-            <button className={`tb-btn ${brushType === 'eraser' ? 'active' : ''}`} onClick={() => setBrushType('eraser')} title="Eraser">
-              <Eraser size={14} /><span>Eraser</span>
+            <button className={`tb-btn ${brushType === 'eraser' ? 'active' : ''}`} onClick={() => setBrushType('eraser')} title="Eraser" style={{ padding: '8px 10px' }}>
+              <Eraser size={14} />
             </button>
 
             <div className="tb-divider" />
@@ -206,11 +206,12 @@ export const BottomToolbar: React.FC<BottomToolbarProps> = ({
               className="tb-btn"
               onClick={onUndo}
               title="Undo (Ctrl+Z)"
+              style={{ padding: '8px 10px' }}
             >
-              <Undo2 size={14} /><span>Undo</span>
+              <Undo2 size={14} />
             </button>
-            <button className="tb-btn" onClick={onClear} title="Clear canvas" style={{ color: 'rgba(232,176,154,0.9)' }}>
-              <Trash2 size={14} /><span>Clear</span>
+            <button className="tb-btn" onClick={onClear} title="Clear canvas" style={{ color: 'rgba(232,176,154,0.9)', padding: '8px 10px' }}>
+              <Trash2 size={14} />
             </button>
           </>
         )}
