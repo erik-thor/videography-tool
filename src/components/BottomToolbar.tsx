@@ -13,6 +13,10 @@ import {
   Pin,
   BookOpen,
   Map,
+  Play,
+  Pause,
+  Square,
+  Circle,
 } from 'lucide-react';
 import type { ViewMode } from '../App';
 
@@ -33,6 +37,13 @@ interface BottomToolbarProps {
   onClear: () => void;
   onUndo: () => void;
   theme: 'light' | 'dark';
+  // Recording controls
+  recordingStatus: 'idle' | 'recording' | 'paused';
+  recordingTime: number;
+  onStartRecording: () => void;
+  onPauseRecording: () => void;
+  onResumeRecording: () => void;
+  onStopRecording: () => void;
 }
 
 const PALETTE_COLORS = [
@@ -79,121 +90,246 @@ export const BottomToolbar: React.FC<BottomToolbarProps> = ({
   setBrushSize,
   onClear,
   onUndo,
+  recordingStatus,
+  recordingTime,
+  onStartRecording,
+  onPauseRecording,
+  onResumeRecording,
+  onStopRecording,
 }) => {
   const isDrawingActive = whiteboardActive;
 
+  const formatDuration = (totalSeconds: number) => {
+    const mins = Math.floor(totalSeconds / 60);
+    const secs = totalSeconds % 60;
+    return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+  };
+
   return (
-    <div className="bottom-toolbar">
-      {/* ---- View Mode Switchers ---- */}
-      {VIEW_MODES.map(({ mode, icon, label }) => (
-        <button
-          key={mode}
-          className={`tb-btn ${viewMode === mode ? 'active' : ''}`}
-          onClick={() => setViewMode(mode)}
-          title={label}
-        >
-          {icon}
-          <span>{label}</span>
-        </button>
-      ))}
-
-      <div className="tb-divider" />
-
-      {/* ---- Annotation Toggle (for all views except solid whiteboard) ---- */}
-      {viewMode !== 'whiteboard' && (
-        <button
-          className={`tb-btn ${whiteboardActive ? 'active' : ''}`}
-          onClick={onToggleDrawOnDiagram}
-          title={`Draw over ${viewMode}`}
-        >
-          <Pencil size={14} />
-          <span>
-            {whiteboardActive
-              ? 'Stop Drawing'
-              : viewMode === 'diagram'
-              ? 'Draw on Diagram'
-              : viewMode === 'bullet-journal'
-              ? 'Annotate Journal'
-              : viewMode === 'media'
-              ? 'Draw on Media'
-              : viewMode === 'corkboard'
-              ? 'Draw on Corkboard'
-              : 'Draw on Journey'}
-          </span>
-        </button>
-      )}
-
-      {/* ---- Spotlight (available in all view modes) ---- */}
-      <button
-        className={`tb-btn ${flashlightActive ? 'active' : ''}`}
-        onClick={() => setFlashlightActive(!flashlightActive)}
-        title="Spotlight / Flashlight"
-      >
-        <Zap size={14} />
-        <span>Spotlight</span>
-      </button>
-
-      {/* ---- Drawing Tools (shown when whiteboard is active in any form) ---- */}
-      {isDrawingActive && (
-        <>
-          <div className="tb-divider" />
-
-          <button className={`tb-btn ${brushType === 'pencil' ? 'active' : ''}`} onClick={() => setBrushType('pencil')} title="Pencil">
-            <Pencil size={14} /><span>Pencil</span>
-          </button>
-          <button className={`tb-btn ${brushType === 'highlighter' ? 'active' : ''}`} onClick={() => setBrushType('highlighter')} title="Marker">
-            <Highlighter size={14} /><span>Marker</span>
-          </button>
-          <button className={`tb-btn ${brushType === 'text' ? 'active' : ''}`} onClick={() => setBrushType('text')} title="Text">
-            <Type size={14} /><span>Text</span>
-          </button>
-          <button className={`tb-btn ${brushType === 'eraser' ? 'active' : ''}`} onClick={() => setBrushType('eraser')} title="Eraser">
-            <Eraser size={14} /><span>Eraser</span>
-          </button>
-
-          <div className="tb-divider" />
-
-          {/* Color palette */}
-          {brushType !== 'eraser' && (
-            <>
-              {PALETTE_COLORS.map((c) => (
-                <button
-                  key={c.value}
-                  className={`color-dot ${strokeColor === c.value ? 'selected' : ''}`}
-                  style={{ backgroundColor: c.value }}
-                  onClick={() => setStrokeColor(c.value)}
-                  title={c.name}
-                />
-              ))}
-              <div className="tb-divider" />
-            </>
-          )}
-
-          {/* Brush sizes */}
-          {BRUSH_SIZES.map((s) => (
-            <button
-              key={s.value}
-              className={`size-dot ${brushSize === s.value ? 'selected' : ''}`}
-              style={{ width: `${s.dotSize}px`, height: `${s.dotSize}px` }}
-              onClick={() => setBrushSize(s.value)}
-              title={`${s.label} (${s.value}px)`}
-            />
-          ))}
-
-          <div className="tb-divider" />
-
+    <div className="bottom-toolbar" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
+      {/* LEFT SECTION: View Modes */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flex: 1, minWidth: 0, justifyContent: 'flex-start' }}>
+        {VIEW_MODES.map(({ mode, icon, label }) => (
           <button
-            className="tb-btn"
-            onClick={onUndo}
-            title="Undo (Ctrl+Z)"
+            key={mode}
+            className={`tb-btn ${viewMode === mode ? 'active' : ''}`}
+            onClick={() => setViewMode(mode)}
+            title={label}
           >
-            <Undo2 size={14} /><span>Undo</span>
+            {icon}
+            <span>{label}</span>
           </button>
-          <button className="tb-btn" onClick={onClear} title="Clear canvas" style={{ color: 'rgba(232,176,154,0.9)' }}>
-            <Trash2 size={14} /><span>Clear</span>
+        ))}
+      </div>
+
+      {/* CENTER SECTION: Whiteboard Brush Tools & Spotlight */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: '6px', justifyContent: 'center' }}>
+        {viewMode !== 'whiteboard' && (
+          <button
+            className={`tb-btn ${whiteboardActive ? 'active' : ''}`}
+            onClick={onToggleDrawOnDiagram}
+            title={`Draw over ${viewMode}`}
+          >
+            <Pencil size={14} />
+            <span>
+              {whiteboardActive
+                ? 'Stop Drawing'
+                : viewMode === 'diagram'
+                ? 'Draw on Diagram'
+                : viewMode === 'bullet-journal'
+                ? 'Annotate Journal'
+                : viewMode === 'media'
+                ? 'Draw on Media'
+                : viewMode === 'corkboard'
+                ? 'Draw on Corkboard'
+                : 'Draw on Journey'}
+            </span>
           </button>
-        </>
-      )}
+        )}
+
+        <button
+          className={`tb-btn ${flashlightActive ? 'active' : ''}`}
+          onClick={() => setFlashlightActive(!flashlightActive)}
+          title="Spotlight / Flashlight"
+        >
+          <Zap size={14} />
+          <span>Spotlight</span>
+        </button>
+
+        {isDrawingActive && (
+          <>
+            <div className="tb-divider" />
+
+            <button className={`tb-btn ${brushType === 'pencil' ? 'active' : ''}`} onClick={() => setBrushType('pencil')} title="Pencil">
+              <Pencil size={14} /><span>Pencil</span>
+            </button>
+            <button className={`tb-btn ${brushType === 'highlighter' ? 'active' : ''}`} onClick={() => setBrushType('highlighter')} title="Marker">
+              <Highlighter size={14} /><span>Marker</span>
+            </button>
+            <button className={`tb-btn ${brushType === 'text' ? 'active' : ''}`} onClick={() => setBrushType('text')} title="Text">
+              <Type size={14} /><span>Text</span>
+            </button>
+            <button className={`tb-btn ${brushType === 'eraser' ? 'active' : ''}`} onClick={() => setBrushType('eraser')} title="Eraser">
+              <Eraser size={14} /><span>Eraser</span>
+            </button>
+
+            <div className="tb-divider" />
+
+            {brushType !== 'eraser' && (
+              <>
+                {PALETTE_COLORS.map((c) => (
+                  <button
+                    key={c.value}
+                    className={`color-dot ${strokeColor === c.value ? 'selected' : ''}`}
+                    style={{ backgroundColor: c.value }}
+                    onClick={() => setStrokeColor(c.value)}
+                    title={c.name}
+                  />
+                ))}
+                <div className="tb-divider" />
+              </>
+            )}
+
+            {BRUSH_SIZES.map((s) => (
+              <button
+                key={s.value}
+                className={`size-dot ${brushSize === s.value ? 'selected' : ''}`}
+                style={{ width: `${s.dotSize}px`, height: `${s.dotSize}px` }}
+                onClick={() => setBrushSize(s.value)}
+                title={`${s.label} (${s.value}px)`}
+              />
+            ))}
+
+            <div className="tb-divider" />
+
+            <button
+              className="tb-btn"
+              onClick={onUndo}
+              title="Undo (Ctrl+Z)"
+            >
+              <Undo2 size={14} /><span>Undo</span>
+            </button>
+            <button className="tb-btn" onClick={onClear} title="Clear canvas" style={{ color: 'rgba(232,176,154,0.9)' }}>
+              <Trash2 size={14} /><span>Clear</span>
+            </button>
+          </>
+        )}
+      </div>
+
+      {/* RIGHT SECTION: Studio Recorder Controls */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flex: 1, minWidth: 0, justifyContent: 'flex-end', fontFamily: 'Inter, sans-serif' }}>
+        <div className="tb-divider" />
+        
+        {/* Active Timer and Indicator */}
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: '8px',
+          padding: '4px 10px',
+          borderRadius: '6px',
+          background: 'rgba(244, 234, 213, 0.05)',
+          border: '1px solid rgba(244, 234, 213, 0.08)',
+          color: recordingStatus === 'recording' ? 'var(--terracotta)' : '#F4EAD5',
+          fontFamily: 'Lora, Georgia, serif',
+          fontWeight: 500,
+          fontSize: '14px',
+          letterSpacing: '0.5px'
+        }}>
+          <span 
+            style={{
+              width: '8px',
+              height: '8px',
+              borderRadius: '50%',
+              backgroundColor: recordingStatus === 'recording' ? 'var(--terracotta)' : recordingStatus === 'paused' ? 'var(--warm-gold)' : 'rgba(244,234,213,0.2)',
+              display: 'inline-block',
+              animation: recordingStatus === 'recording' ? 'pulse 1.5s infinite' : 'none'
+            }}
+          />
+          <span>{formatDuration(recordingTime)}</span>
+        </div>
+
+        {/* Action button triggers */}
+        {recordingStatus === 'idle' ? (
+          <button
+            onClick={onStartRecording}
+            style={{
+              padding: '6px 12px',
+              background: 'var(--terracotta)',
+              color: '#F4EAD5',
+              border: 'none',
+              borderRadius: '6px',
+              cursor: 'pointer',
+              fontSize: '12px',
+              fontWeight: 600,
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+            }}
+          >
+            <Circle size={10} fill="#F4EAD5" /> Record
+          </button>
+        ) : (
+          <div style={{ display: 'flex', gap: '6px' }}>
+            {recordingStatus === 'recording' ? (
+              <button
+                onClick={onPauseRecording}
+                style={{
+                  padding: '6px 10px',
+                  background: 'rgba(244,234,213,0.1)',
+                  color: '#F4EAD5',
+                  border: '1px solid rgba(244,234,213,0.2)',
+                  borderRadius: '6px',
+                  cursor: 'pointer',
+                  fontSize: '12px',
+                  fontWeight: 600,
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '4px',
+                }}
+              >
+                <Pause size={10} /> Pause
+              </button>
+            ) : (
+              <button
+                onClick={onResumeRecording}
+                style={{
+                  padding: '6px 10px',
+                  background: 'var(--terracotta)',
+                  color: '#F4EAD5',
+                  border: 'none',
+                  borderRadius: '6px',
+                  cursor: 'pointer',
+                  fontSize: '12px',
+                  fontWeight: 600,
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '4px',
+                }}
+              >
+                <Play size={10} /> Resume
+              </button>
+            )}
+            <button
+              onClick={onStopRecording}
+              style={{
+                padding: '6px 10px',
+                background: 'rgba(232,176,154,0.15)',
+                color: '#E8B09A',
+                border: '1px solid rgba(232,176,154,0.3)',
+                borderRadius: '6px',
+                cursor: 'pointer',
+                fontSize: '12px',
+                fontWeight: 600,
+                display: 'flex',
+                alignItems: 'center',
+                gap: '4px',
+              }}
+            >
+              <Square size={10} /> Stop
+            </button>
+          </div>
+        )}
+      </div>
     </div>
   );
 };

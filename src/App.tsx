@@ -214,9 +214,14 @@ function App() {
       const micSource = audioCtx.createMediaStreamSource(micStream);
       micSource.connect(dest);
 
-      // Capture Screen (hints browser to prefer tab capture and pre-selects current tab)
+      // Capture Screen (hints browser to prefer tab capture, pre-selects current tab, and hides mouse cursor)
       const displayStream = await navigator.mediaDevices.getDisplayMedia({
-        video: { width: 1920, height: 1080, displaySurface: "browser" },
+        video: {
+          width: 1920,
+          height: 1080,
+          displaySurface: "browser",
+          cursor: "never"
+        } as any,
         audio: true,
         preferCurrentTab: true,
         selfBrowserSurface: "include"
@@ -705,6 +710,12 @@ function App() {
           onClear={handleClearWhiteboard}
           onUndo={handleUndoWhiteboard}
           theme={theme}
+          recordingStatus={recordingStatus}
+          recordingTime={recordingTime}
+          onStartRecording={handleStartRecording}
+          onPauseRecording={handlePauseRecording}
+          onResumeRecording={handleResumeRecording}
+          onStopRecording={handleStopRecording}
         />
       </div>
     </div>
