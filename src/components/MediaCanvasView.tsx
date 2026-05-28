@@ -1,8 +1,10 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Globe, Image as ImageIcon, Upload, Youtube, X } from 'lucide-react';
 
 interface MediaCanvasViewProps {
   theme: 'light' | 'dark';
+  data?: { activeTab: 'image' | 'web'; imageSrc: string; imageUrlInput: string; webUrlInput: string; loadedWebUrl: string; youtubeId: string | null };
+  onChange?: (newData: { activeTab: 'image' | 'web'; imageSrc: string; imageUrlInput: string; webUrlInput: string; loadedWebUrl: string; youtubeId: string | null }) => void;
 }
 
 // Extract youtube video ID from a URL
@@ -12,15 +14,41 @@ const getYoutubeId = (url: string): string | null => {
   return match && match[2].length === 11 ? match[2] : null;
 };
 
-export const MediaCanvasView: React.FC<MediaCanvasViewProps> = ({ theme }) => {
-  const [activeTab, setActiveTab] = useState<'image' | 'web'>('web');
-  const [imageSrc, setImageSrc] = useState<string>('');
-  const [imageUrlInput, setImageUrlInput] = useState<string>('');
-  const [webUrlInput, setWebUrlInput] = useState<string>('');
-  const [loadedWebUrl, setLoadedWebUrl] = useState<string>('');
-  const [youtubeId, setYoutubeId] = useState<string | null>(null);
+export const MediaCanvasView: React.FC<MediaCanvasViewProps> = ({
+  theme,
+  data = { activeTab: 'web', imageSrc: '', imageUrlInput: '', webUrlInput: '', loadedWebUrl: '', youtubeId: null },
+  onChange,
+}) => {
+  const [activeTab, setActiveTab] = useState<'image' | 'web'>(data.activeTab);
+  const [imageSrc, setImageSrc] = useState<string>(data.imageSrc);
+  const [imageUrlInput, setImageUrlInput] = useState<string>(data.imageUrlInput);
+  const [webUrlInput, setWebUrlInput] = useState<string>(data.webUrlInput);
+  const [loadedWebUrl, setLoadedWebUrl] = useState<string>(data.loadedWebUrl);
+  const [youtubeId, setYoutubeId] = useState<string | null>(data.youtubeId);
   const [inputWarning, setInputWarning] = useState<string>('');
   const [imageError, setImageError] = useState<boolean>(false);
+
+  useEffect(() => {
+    setActiveTab(data.activeTab);
+    setImageSrc(data.imageSrc);
+    setImageUrlInput(data.imageUrlInput);
+    setWebUrlInput(data.webUrlInput);
+    setLoadedWebUrl(data.loadedWebUrl);
+    setYoutubeId(data.youtubeId);
+  }, [data]);
+
+  const handleUpdate = (updatedFields: Partial<NonNullable<typeof data>>) => {
+    if (onChange) {
+      onChange({
+        activeTab: updatedFields.activeTab !== undefined ? updatedFields.activeTab : activeTab,
+        imageSrc: updatedFields.imageSrc !== undefined ? updatedFields.imageSrc : imageSrc,
+        imageUrlInput: updatedFields.imageUrlInput !== undefined ? updatedFields.imageUrlInput : imageUrlInput,
+        webUrlInput: updatedFields.webUrlInput !== undefined ? updatedFields.webUrlInput : webUrlInput,
+        loadedWebUrl: updatedFields.loadedWebUrl !== undefined ? updatedFields.loadedWebUrl : loadedWebUrl,
+        youtubeId: updatedFields.youtubeId !== undefined ? updatedFields.youtubeId : youtubeId,
+      });
+    }
+  };
 
   const isDark = theme === 'dark';
   const bg = isDark ? '#2C1F15' : '#F4EAD5';
@@ -45,6 +73,7 @@ export const MediaCanvasView: React.FC<MediaCanvasViewProps> = ({ theme }) => {
       setImageSrc(url);
       setImageError(false);
       setInputWarning('');
+      handleUpdate({ imageSrc: url });
     }
   };
 
@@ -68,6 +97,7 @@ export const MediaCanvasView: React.FC<MediaCanvasViewProps> = ({ theme }) => {
       finalUrl = 'https://' + val;
     }
     setImageSrc(finalUrl);
+    handleUpdate({ imageSrc: finalUrl });
   };
 
   const handleLoadWebUrl = () => {
@@ -86,7 +116,9 @@ export const MediaCanvasView: React.FC<MediaCanvasViewProps> = ({ theme }) => {
       }
     }
     setLoadedWebUrl(url);
-    setYoutubeId(getYoutubeId(url));
+    const ytId = getYoutubeId(url);
+    setYoutubeId(ytId);
+    handleUpdate({ loadedWebUrl: url, youtubeId: ytId });
   };
 
   const handleClearMedia = () => {
@@ -97,6 +129,7 @@ export const MediaCanvasView: React.FC<MediaCanvasViewProps> = ({ theme }) => {
     setImageUrlInput('');
     setInputWarning('');
     setImageError(false);
+    handleUpdate({ imageSrc: '', loadedWebUrl: '', youtubeId: null, imageUrlInput: '', webUrlInput: '' });
   };
 
   // Shared input + button row styles
@@ -263,11 +296,11 @@ export const MediaCanvasView: React.FC<MediaCanvasViewProps> = ({ theme }) => {
 
           {/* Tabs */}
           <div style={{ display: 'flex', gap: '8px', background: isDark ? 'rgba(244,234,213,0.05)' : 'rgba(44,31,21,0.05)', borderRadius: '10px', padding: '4px' }}>
-            <button style={tabBtnStyle(activeTab === 'image')} onClick={() => setActiveTab('image')}>
+            <button style={tabBtnStyle(activeTab === 'image')} onClick={() => { setActiveTab('image'); handleUpdate({ activeTab: 'image' }); }}>
               <ImageIcon size={16} />
               Image / Screenshot
             </button>
-            <button style={tabBtnStyle(activeTab === 'web')} onClick={() => setActiveTab('web')}>
+            <button style={tabBtnStyle(activeTab === 'web')} onClick={() => { setActiveTab('web'); handleUpdate({ activeTab: 'web' }); }}>
               <Globe size={16} />
               Website / YouTube
             </button>
@@ -308,9 +341,15 @@ export const MediaCanvasView: React.FC<MediaCanvasViewProps> = ({ theme }) => {
                 <input
                   type="text"
                   value={imageUrlInput}
-                  onChange={(e) => setImageUrlInput(e.target.value)}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    setImageUrlInput(val);
+                    handleUpdate({ imageUrlInput: val });
+                  }}
                   onKeyDown={(e) => e.key === 'Enter' && handleLoadImageUrl()}
                   placeholder="https://example.com/image.jpg"
+                  spellCheck={false}
+                  data-enable-grammarly="false"
                   style={inputStyle}
                 />
                 <button onClick={handleLoadImageUrl} style={btnStyle}>
@@ -347,9 +386,15 @@ export const MediaCanvasView: React.FC<MediaCanvasViewProps> = ({ theme }) => {
                 <input
                   type="text"
                   value={webUrlInput}
-                  onChange={(e) => setWebUrlInput(e.target.value)}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    setWebUrlInput(val);
+                    handleUpdate({ webUrlInput: val });
+                  }}
                   onKeyDown={(e) => e.key === 'Enter' && handleLoadWebUrl()}
                   placeholder="https://youtube.com/watch?v=... or blog URL"
+                  spellCheck={false}
+                  data-enable-grammarly="false"
                   style={inputStyle}
                 />
                 <button onClick={handleLoadWebUrl} style={{ ...btnStyle, display: 'flex', alignItems: 'center', gap: '6px' }}>

@@ -1,17 +1,33 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 
-export const QuestionPromptWidget: React.FC = () => {
-  const [question, setQuestion] = useState(
-    "Personal Reflection: [Reflection Question: What's standing in the way of your authentic self-expression today?]"
-  );
+interface QuestionPromptWidgetProps {
+  question?: string;
+  onChange?: (val: string) => void;
+}
+
+export const QuestionPromptWidget: React.FC<QuestionPromptWidgetProps> = ({
+  question: propQuestion = '',
+  onChange,
+}) => {
+  const [question, setQuestion] = useState(propQuestion);
+
+  useEffect(() => {
+    setQuestion(propQuestion);
+  }, [propQuestion]);
+
+  const handleChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    const val = e.target.value;
+    setQuestion(val);
+    if (onChange) onChange(val);
+  };
 
   return (
     <div
       style={{
-        borderLeft: '6px solid var(--terracotta)',
-        paddingLeft: '22px',
-        paddingTop: '6px',
-        paddingBottom: '6px',
+        borderLeft: '8px solid var(--terracotta)',
+        paddingLeft: '28px',
+        paddingTop: '8px',
+        paddingBottom: '8px',
         fontFamily: 'Lora, Georgia, serif',
         color: 'var(--warm-ink)',
         width: '100%',
@@ -19,7 +35,7 @@ export const QuestionPromptWidget: React.FC = () => {
     >
       <textarea
         value={question}
-        onChange={(e) => setQuestion(e.target.value)}
+        onChange={handleChange}
         rows={4}
         spellCheck={false}
         data-enable-grammarly="false"
@@ -30,8 +46,8 @@ export const QuestionPromptWidget: React.FC = () => {
           background: 'transparent',
           color: 'inherit',
           fontFamily: 'inherit',
-          fontSize: '24px',
-          lineHeight: '1.6',
+          fontSize: '36px',
+          lineHeight: '1.5',
           fontWeight: 500,
           resize: 'none',
           padding: 0,

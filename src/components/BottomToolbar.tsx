@@ -6,7 +6,6 @@ import {
   Type,
   Undo2,
   Trash2,
-  Layout,
   PenTool,
   Globe,
   Zap,
@@ -17,6 +16,7 @@ import {
   Pause,
   Square,
   Circle,
+  Cloud,
 } from 'lucide-react';
 import type { ViewMode } from '../App';
 
@@ -64,14 +64,12 @@ const BRUSH_SIZES = [
   { label: 'L', value: 24, dotSize: 22 },
 ];
 
-// Mode groups for the toolbar
 const VIEW_MODES = [
-  { mode: 'diagram' as ViewMode, icon: <Layout size={14} />, label: 'Diagrams' },
   { mode: 'whiteboard' as ViewMode, icon: <PenTool size={14} />, label: 'Whiteboard' },
   { mode: 'media' as ViewMode, icon: <Globe size={14} />, label: 'Media' },
   { mode: 'corkboard' as ViewMode, icon: <Pin size={14} />, label: 'Corkboard' },
-  { mode: 'bullet-journal' as ViewMode, icon: <BookOpen size={14} />, label: 'Journal' },
   { mode: 'hero-journey' as ViewMode, icon: <Map size={14} />, label: "Hero's Journey" },
+  { mode: 'word-cloud' as ViewMode, icon: <Cloud size={14} />, label: 'Word Cloud' },
 ];
 
 export const BottomToolbar: React.FC<BottomToolbarProps> = ({
@@ -131,10 +129,8 @@ export const BottomToolbar: React.FC<BottomToolbarProps> = ({
             title={
               whiteboardActive
                 ? 'Stop Drawing'
-                : viewMode === 'diagram'
-                ? 'Draw on Diagram'
-                : viewMode === 'bullet-journal'
-                ? 'Annotate Journal'
+                : viewMode === 'word-cloud'
+                ? 'Draw on Word Cloud'
                 : viewMode === 'media'
                 ? 'Draw on Media'
                 : viewMode === 'corkboard'

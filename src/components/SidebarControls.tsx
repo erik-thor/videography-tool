@@ -1,9 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   Settings,
   Eye, EyeOff,
-  Circle,
-  Grid3x3,
   Timer,
   CheckSquare,
   FileText,
@@ -14,14 +12,15 @@ import {
   Layout,
   ScrollText,
   Video,
-  Play,
-  Pause,
-  Square,
   AlertTriangle,
-  RotateCcw,
   Plus,
   Pencil,
   Trash2,
+  Sparkles,
+  Key,
+  Brain,
+  Download,
+  Upload,
 } from 'lucide-react';
 import type { WebcamPosition, WebcamStyle } from './WebcamSlot';
 import type { ViewMode, Scene, Project } from '../App';
@@ -35,8 +34,6 @@ interface SidebarControlsProps {
 
   viewMode: ViewMode;
   setViewMode: (mode: ViewMode) => void;
-  diagramType: 'circle' | 'flowchart';
-  setDiagramType: (t: 'circle' | 'flowchart') => void;
   whiteboardActive: boolean;
   whiteboardOnTop: boolean;
   onToggleDrawOnDiagram: () => void;
@@ -70,6 +67,13 @@ interface SidebarControlsProps {
   scriptText: string;
   setScriptText: (text: string) => void;
 
+  // AI Copilot Props
+  isAiEnabled: boolean;
+  setIsAiEnabled: (v: boolean) => void;
+  geminiApiKey: string;
+  setGeminiApiKey: (key: string) => void;
+  aiSuggestions: string[];
+
   // Projects Props
   projects: Project[];
   currentProjectId: string;
@@ -77,6 +81,8 @@ interface SidebarControlsProps {
   onCreateProject: (name: string) => void;
   onRenameProject: (id: string, name: string) => void;
   onDeleteProject: (id: string) => void;
+  onExportProject: () => void;
+  onImportProject: () => void;
 
   // Scene Manager Props
   scenes: Scene[];
@@ -84,6 +90,7 @@ interface SidebarControlsProps {
   onSelectScene: (id: string) => void;
   onSaveCurrentScene: (name: string) => void;
   onRenameScene?: (id: string, name: string) => void;
+  onUpdateSceneCustomData?: (sceneId: string, key: string, value: any) => void;
 
   // Recording Props
   recordingStatus: 'idle' | 'recording' | 'paused';
@@ -139,21 +146,23 @@ const inlineSelectStyle: React.CSSProperties = {
 };
 
 // ============================================================
-// SCRIPT TAB — Notepad / Teleprompter panel + Ambient loops
+// SCRIPT TAB — Notepad / Teleprompter panel + AI suggestions
 // ============================================================
 interface ScriptTabProps {
   fontSize: number;
   setFontSize: React.Dispatch<React.SetStateAction<number>>;
   script: string;
   setScript: (s: string) => void;
+  aiSuggestions: string[];
+  isAiEnabled: boolean;
 }
 
-const ScriptTab: React.FC<ScriptTabProps> = ({ fontSize, setFontSize, script, setScript }) => {
+const ScriptTab: React.FC<ScriptTabProps> = ({ fontSize, setFontSize, script, setScript, aiSuggestions, isAiEnabled }) => {
   return (
     <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', padding: '14px', gap: '16px' }}>
       
       {/* Script block */}
-      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', minHeight: 0 }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px', flexShrink: 0 }}>
           <span style={{ fontSize: '10px', textTransform: 'uppercase', letterSpacing: '1.2px', color: 'rgba(244,234,213,0.4)', fontFamily: 'Inter' }}>Script & Teleprompter</span>
           <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
@@ -193,13 +202,50 @@ const ScriptTab: React.FC<ScriptTabProps> = ({ fontSize, setFontSize, script, se
         />
       </div>
 
-      {/* Divider */}
-      <div style={{ height: '1px', backgroundColor: 'rgba(244,234,213,0.08)', flexShrink: 0 }} />
-
-      {/* Soundboard integration */}
-      <div style={{ flexShrink: 0 }}>
-        <Soundboard />
-      </div>
+      {/* AI Prompts & Suggestions panel */}
+      {isAiEnabled && (
+        <div style={{ flexShrink: 0, display: 'flex', flexDirection: 'column', gap: '8px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0 }}>
+            <Brain size={11} style={{ color: '#8AA68E' }} />
+            <span style={{ fontSize: '10px', textTransform: 'uppercase', letterSpacing: '1.2px', color: 'rgba(138,166,142,0.8)', fontFamily: 'Inter' }}>AI Prompts & Questions</span>
+            {aiSuggestions.length === 0 && (
+              <span style={{ fontSize: '9px', color: 'rgba(244,234,213,0.25)', fontFamily: 'Inter', marginLeft: 'auto' }}>Listening…</span>
+            )}
+          </div>
+          <div style={{
+            maxHeight: '160px',
+            overflowY: 'auto',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '5px',
+            background: 'rgba(138,166,142,0.06)',
+            border: '1px solid rgba(138,166,142,0.2)',
+            borderRadius: '8px',
+            padding: '8px',
+          }}>
+            {aiSuggestions.length === 0 ? (
+              <p style={{ fontSize: '11px', color: 'rgba(244,234,213,0.25)', fontFamily: 'Inter', lineHeight: '1.5', margin: 0, fontStyle: 'italic' }}>
+                Start recording and speak — AI will generate questions and prompts based on what you say.
+              </p>
+            ) : (
+              aiSuggestions.map((s, i) => (
+                <div key={i} style={{
+                  fontSize: '11.5px',
+                  color: 'rgba(244,234,213,0.82)',
+                  fontFamily: 'Lora, Georgia, serif',
+                  lineHeight: '1.5',
+                  padding: '6px 8px',
+                  background: 'rgba(138,166,142,0.1)',
+                  borderRadius: '5px',
+                  borderLeft: '2px solid rgba(138,166,142,0.5)',
+                }}>
+                  {s}
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 };
@@ -214,8 +260,6 @@ export const SidebarControls: React.FC<SidebarControlsProps> = ({
   setBackgroundMode,
   viewMode,
   setViewMode,
-  setDiagramType,
-  diagramType,
   webcamVisible,
   setWebcamVisible,
   webcamPosition,
@@ -231,17 +275,25 @@ export const SidebarControls: React.FC<SidebarControlsProps> = ({
   setIsCollapsed,
   scriptText,
   setScriptText,
+  isAiEnabled,
+  setIsAiEnabled,
+  geminiApiKey,
+  setGeminiApiKey,
+  aiSuggestions,
   projects,
   currentProjectId,
   onSelectProject,
   onCreateProject,
   onRenameProject,
   onDeleteProject,
+  onExportProject,
+  onImportProject,
   scenes,
   activeSceneId,
   onSelectScene,
   onSaveCurrentScene,
   onRenameScene,
+  onUpdateSceneCustomData,
   recordingStatus,
   recordingName,
   setRecordingName,
@@ -258,6 +310,7 @@ export const SidebarControls: React.FC<SidebarControlsProps> = ({
   onRecoverVideo,
 }) => {
   const [activeTab, setActiveTab] = useState<'canvas' | 'script' | 'record'>('canvas');
+  const activeScene = scenes.find(s => s.id === activeSceneId);
   const [fontSize, setFontSize] = useState(13);
   const [editingSceneId, setEditingSceneId] = useState<string | null>(null);
   const [tempSceneName, setTempSceneName] = useState<string>('');
@@ -324,51 +377,51 @@ export const SidebarControls: React.FC<SidebarControlsProps> = ({
         flexShrink: 0,
       }}>
         {!isCollapsed && (
-          <div style={{ display: 'flex', gap: '3px', flex: 1 }}>
+          <div style={{ display: 'flex', gap: '6px', flex: 1 }}>
             <button
               onClick={() => setActiveTab('canvas')}
+              title="Canvas & Scene Views"
               style={{
-                flex: 1, padding: '5px 4px',
+                flex: 1, padding: '6px 4px',
                 background: activeTab === 'canvas' ? 'rgba(184,103,74,0.25)' : 'transparent',
                 border: activeTab === 'canvas' ? '1px solid rgba(184,103,74,0.4)' : '1px solid transparent',
                 borderRadius: '5px',
                 color: activeTab === 'canvas' ? '#E8B09A' : 'rgba(244,234,213,0.45)',
-                cursor: 'pointer', fontSize: '10.5px',
-                fontFamily: 'Inter', fontWeight: 500,
-                display: 'flex', alignItems: 'center', gap: '3px', justifyContent: 'center',
+                cursor: 'pointer',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
               }}
             >
-              <Layout size={11} /> Canvas
+              <Layout size={14} />
             </button>
             <button
               onClick={() => setActiveTab('script')}
+              title="Script & Teleprompter"
               style={{
-                flex: 1, padding: '5px 4px',
+                flex: 1, padding: '6px 4px',
                 background: activeTab === 'script' ? 'rgba(123,145,184,0.25)' : 'transparent',
                 border: activeTab === 'script' ? '1px solid rgba(123,145,184,0.4)' : '1px solid transparent',
                 borderRadius: '5px',
                 color: activeTab === 'script' ? '#7B91B8' : 'rgba(244,234,213,0.45)',
-                cursor: 'pointer', fontSize: '10.5px',
-                fontFamily: 'Inter', fontWeight: 500,
-                display: 'flex', alignItems: 'center', gap: '3px', justifyContent: 'center',
+                cursor: 'pointer',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
               }}
             >
-              <ScrollText size={11} /> Script
+              <ScrollText size={14} />
             </button>
             <button
               onClick={() => setActiveTab('record')}
+              title="Recording & Devices"
               style={{
-                flex: 1, padding: '5px 4px',
+                flex: 1, padding: '6px 4px',
                 background: activeTab === 'record' ? 'rgba(138,166,142,0.25)' : 'transparent',
                 border: activeTab === 'record' ? '1px solid rgba(138,166,142,0.4)' : '1px solid transparent',
                 borderRadius: '5px',
                 color: activeTab === 'record' ? '#8AA68E' : 'rgba(244,234,213,0.45)',
-                cursor: 'pointer', fontSize: '10.5px',
-                fontFamily: 'Inter', fontWeight: 500,
-                display: 'flex', alignItems: 'center', gap: '3px', justifyContent: 'center',
+                cursor: 'pointer',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
               }}
             >
-              <Video size={11} /> Record
+              <Video size={14} />
             </button>
           </div>
         )}
@@ -389,7 +442,7 @@ export const SidebarControls: React.FC<SidebarControlsProps> = ({
 
       {/* ---- Script & Loops Tab ---- */}
       {!isCollapsed && activeTab === 'script' && (
-        <ScriptTab fontSize={fontSize} setFontSize={setFontSize} script={scriptText} setScript={setScriptText} />
+        <ScriptTab fontSize={fontSize} setFontSize={setFontSize} script={scriptText} setScript={setScriptText} aiSuggestions={aiSuggestions} isAiEnabled={isAiEnabled} />
       )}
 
       {/* ---- Canvas Controls Tab ---- */}
@@ -442,6 +495,38 @@ export const SidebarControls: React.FC<SidebarControlsProps> = ({
               >
                 <Plus size={13} />
               </button>
+              <button
+                onClick={onImportProject}
+                title="Import project from JSON file"
+                style={{
+                  background: 'rgba(138,166,142,0.15)',
+                  border: '1px solid rgba(138,166,142,0.3)',
+                  color: '#8AA68E',
+                  borderRadius: '5px',
+                  padding: '6px 10px',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                }}
+              >
+                <Upload size={13} />
+              </button>
+              <button
+                onClick={onExportProject}
+                title="Export project as JSON file"
+                style={{
+                  background: 'rgba(123,145,184,0.12)',
+                  border: '1px solid rgba(123,145,184,0.25)',
+                  color: '#7B91B8',
+                  borderRadius: '5px',
+                  padding: '6px 10px',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                }}
+              >
+                <Download size={13} />
+              </button>
             </div>
 
             <div style={{ display: 'flex', gap: '6px' }}>
@@ -450,6 +535,8 @@ export const SidebarControls: React.FC<SidebarControlsProps> = ({
                 value={editingProjectName}
                 onChange={(e) => setEditingProjectName(e.target.value)}
                 placeholder="Rename project..."
+                spellCheck={false}
+                data-enable-grammarly="false"
                 style={{
                   flex: 1,
                   padding: '5px 8px',
@@ -558,6 +645,8 @@ export const SidebarControls: React.FC<SidebarControlsProps> = ({
                         }}
                         onClick={(e) => e.stopPropagation()}
                         autoFocus
+                        spellCheck={false}
+                        data-enable-grammarly="false"
                         style={{
                           flex: 1,
                           fontSize: '12px',
@@ -619,6 +708,8 @@ export const SidebarControls: React.FC<SidebarControlsProps> = ({
                 value={newSceneName}
                 onChange={e => setNewSceneName(e.target.value)}
                 placeholder="Name current scene layout..."
+                spellCheck={false}
+                data-enable-grammarly="false"
                 style={{
                   flex: 1,
                   padding: '5px 8px',
@@ -651,19 +742,30 @@ export const SidebarControls: React.FC<SidebarControlsProps> = ({
 
           <div className="sb-divider" />
 
-          {/* Diagram sub-type */}
-          {viewMode === 'diagram' && (
-            <section>
-              <p className="sb-section-title">Active Diagram</p>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                <button className={`sb-btn ${diagramType === 'circle' ? 'active-blue' : ''}`} onClick={() => setDiagramType('circle')}>
-                  <Circle size={13} /> 8 Core Values
-                </button>
-                <button className={`sb-btn ${diagramType === 'flowchart' ? 'active-blue' : ''}`} onClick={() => setDiagramType('flowchart')}>
-                  <Grid3x3 size={13} /> Flowchart / Node Editor
-                </button>
-              </div>
-            </section>
+          {/* Whiteboard Template */}
+          {viewMode === 'whiteboard' && (
+            <>
+              <section>
+                <p className="sb-section-title">Whiteboard Template</p>
+                <div style={{ display: 'flex', gap: '6px' }}>
+                  <button
+                    className={`sb-btn ${(!activeScene?.whiteboardTemplate || activeScene?.whiteboardTemplate === 'blank') ? 'active' : ''}`}
+                    style={{ flex: 1, justifyContent: 'center' }}
+                    onClick={() => onUpdateSceneCustomData?.(activeSceneId, 'whiteboardTemplate', 'blank')}
+                  >
+                    Blank Canvas
+                  </button>
+                  <button
+                    className={`sb-btn ${activeScene?.whiteboardTemplate === 'bullet' ? 'active' : ''}`}
+                    style={{ flex: 1, justifyContent: 'center' }}
+                    onClick={() => onUpdateSceneCustomData?.(activeSceneId, 'whiteboardTemplate', 'bullet')}
+                  >
+                    Bullet Grid
+                  </button>
+                </div>
+              </section>
+              <div className="sb-divider" />
+            </>
           )}
 
           {/* Theme */}
@@ -685,52 +787,6 @@ export const SidebarControls: React.FC<SidebarControlsProps> = ({
                 ))}
               </select>
             </div>
-          </section>
-
-          <div className="sb-divider" />
-
-          {/* Webcam */}
-          <section>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-              <p className="sb-section-title" style={{ marginBottom: 0 }}>Webcam Slot</p>
-              <button onClick={() => setWebcamVisible(!webcamVisible)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: webcamVisible ? 'var(--terracotta)' : 'rgba(244,234,213,0.3)', display: 'flex', alignItems: 'center', gap: '4px', fontSize: '11px', fontFamily: 'Inter' }}>
-                {webcamVisible ? <Eye size={12} /> : <EyeOff size={12} />}
-                {webcamVisible ? 'Visible' : 'Hidden'}
-              </button>
-            </div>
-            {webcamVisible && (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', fontSize: '12px', color: 'rgba(244,234,213,0.7)' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <span>Position</span>
-                  <select value={webcamPosition} onChange={e => setWebcamPosition(e.target.value as WebcamPosition)} style={inlineSelectStyle}>
-                    <option value="top-left">Top Left</option>
-                    <option value="top-right">Top Right</option>
-                    <option value="bottom-left">Bottom Left</option>
-                    <option value="bottom-right">Bottom Right</option>
-                    <option value="fullscreen">Fullscreen Camera</option>
-                  </select>
-                </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <span>Style</span>
-                  <select value={webcamStyle} onChange={e => setWebcamStyle(e.target.value as WebcamStyle)} style={inlineSelectStyle}>
-                    <option value="placeholder">Boundary Glow</option>
-                    <option value="chroma-green">Chroma Green</option>
-                    <option value="chroma-magenta">Chroma Magenta</option>
-                  </select>
-                </div>
-                {webcamPosition !== 'fullscreen' && (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                      <span>Size</span>
-                      <span style={{ opacity: 0.6 }}>{webcamWidth}×{Math.round(webcamWidth * 9 / 16)}px</span>
-                    </div>
-                    <input type="range" min="160" max="640" step="20" value={webcamWidth}
-                      onChange={e => { const w = parseInt(e.target.value); setWebcamWidth(w); setWebcamHeight(Math.round(w * 9 / 16)); }}
-                      style={{ accentColor: 'var(--terracotta)', cursor: 'pointer', width: '100%' }} />
-                  </div>
-                )}
-              </div>
-            )}
           </section>
 
           <div className="sb-divider" />
@@ -772,6 +828,8 @@ export const SidebarControls: React.FC<SidebarControlsProps> = ({
                 onChange={e => setRecordingName(e.target.value)}
                 placeholder="Enter monologue title..."
                 disabled={recordingStatus !== 'idle'}
+                spellCheck={false}
+                data-enable-grammarly="false"
                 style={{
                   width: '100%',
                   padding: '8px 10px',
@@ -832,82 +890,117 @@ export const SidebarControls: React.FC<SidebarControlsProps> = ({
 
           <div className="sb-divider" />
 
-          {/* Recording actions controls */}
-          <section style={{ display: 'flex', flexDirection: 'column', gap: '12px', alignItems: 'center' }}>
-            <p className="sb-section-title" style={{ alignSelf: 'flex-start' }}>Studio Recorder</p>
-            
-            {/* Display active duration */}
-            <div style={{
-              fontSize: '32px',
-              fontFamily: 'Lora, serif',
-              fontWeight: 500,
-              color: recordingStatus === 'recording' ? 'var(--terracotta)' : '#F4EAD5',
-              letterSpacing: '1px',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '8px',
-            }}>
-              {recordingStatus === 'recording' && <span className="rec-dot" style={{ width: '10px', height: '10px', borderRadius: '50%', backgroundColor: 'var(--terracotta)', display: 'inline-block' }} />}
-              {formatDuration(recordingTime)}
+          {/* Webcam Slot controls (moved from Canvas tab) */}
+          <section>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+              <p className="sb-section-title" style={{ marginBottom: 0 }}>Webcam Slot Overlay</p>
+              <button onClick={() => setWebcamVisible(!webcamVisible)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: webcamVisible ? 'var(--terracotta)' : 'rgba(244,234,213,0.3)', display: 'flex', alignItems: 'center', gap: '4px', fontSize: '11px', fontFamily: 'Inter' }}>
+                {webcamVisible ? <Eye size={12} /> : <EyeOff size={12} />}
+                {webcamVisible ? 'Visible' : 'Hidden'}
+              </button>
             </div>
+            {webcamVisible && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', fontSize: '12px', color: 'rgba(244,234,213,0.7)' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span>Position</span>
+                  <select value={webcamPosition} onChange={e => setWebcamPosition(e.target.value as WebcamPosition)} style={inlineSelectStyle}>
+                    <option value="top-left">Top Left</option>
+                    <option value="top-right">Top Right</option>
+                    <option value="bottom-left">Bottom Left</option>
+                    <option value="bottom-right">Bottom Right</option>
+                    <option value="fullscreen">Fullscreen Camera</option>
+                  </select>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span>Style</span>
+                  <select value={webcamStyle} onChange={e => setWebcamStyle(e.target.value as WebcamStyle)} style={inlineSelectStyle}>
+                    <option value="placeholder">Boundary Glow</option>
+                    <option value="chroma-green">Chroma Green</option>
+                    <option value="chroma-magenta">Chroma Magenta</option>
+                  </select>
+                </div>
+                {webcamPosition !== 'fullscreen' && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                      <span>Size</span>
+                      <span style={{ opacity: 0.6 }}>{webcamWidth}×{Math.round(webcamWidth * 9 / 16)}px</span>
+                    </div>
+                    <input type="range" min="160" max="640" step="20" value={webcamWidth}
+                      onChange={e => { const w = parseInt(e.target.value); setWebcamWidth(w); setWebcamHeight(Math.round(w * 9 / 16)); }}
+                      style={{ accentColor: 'var(--terracotta)', cursor: 'pointer', width: '100%' }} />
+                  </div>
+                )}
+              </div>
+            )}
+          </section>
 
-            {/* Controller buttons */}
-            <div style={{ display: 'flex', gap: '8px', width: '100%', justifyContent: 'center' }}>
-              {recordingStatus === 'idle' ? (
-                <button
-                  onClick={onStartRecording}
+          <div className="sb-divider" />
+
+          {/* Soundboard integration (moved from Script tab) */}
+          <div style={{ flexShrink: 0 }}>
+            <Soundboard />
+          </div>
+
+          <div className="sb-divider" />
+
+          {/* AI Copilot Section */}
+          <section>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '10px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <Sparkles size={13} style={{ color: '#8AA68E' }} />
+                <p className="sb-section-title" style={{ marginBottom: 0 }}>AI Co-Pilot</p>
+              </div>
+              <button
+                onClick={() => setIsAiEnabled(!isAiEnabled)}
+                style={{
+                  background: isAiEnabled ? 'rgba(138,166,142,0.25)' : 'rgba(244,234,213,0.06)',
+                  border: isAiEnabled ? '1px solid rgba(138,166,142,0.5)' : '1px solid rgba(244,234,213,0.12)',
+                  color: isAiEnabled ? '#8AA68E' : 'rgba(244,234,213,0.4)',
+                  borderRadius: '5px',
+                  padding: '3px 9px',
+                  cursor: 'pointer',
+                  fontSize: '11px',
+                  fontFamily: 'Inter',
+                  fontWeight: 600,
+                  transition: 'all 0.2s ease',
+                }}
+              >
+                {isAiEnabled ? 'ON' : 'OFF'}
+              </button>
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', fontSize: '12px' }}>
+              <span style={{ color: 'rgba(244,234,213,0.45)' }}>Gemini API Key</span>
+              <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
+                <Key size={11} style={{ color: 'rgba(244,234,213,0.3)', flexShrink: 0 }} />
+                <input
+                  type="password"
+                  value={geminiApiKey}
+                  onChange={e => setGeminiApiKey(e.target.value)}
+                  placeholder="AIza..."
+                  spellCheck={false}
+                  data-enable-grammarly="false"
                   style={{
-                    flex: 1, padding: '10px 14px', background: 'var(--terracotta)', color: '#F4EAD5',
-                    border: 'none', borderRadius: '6px', cursor: 'pointer', fontSize: '13px', fontWeight: 600,
-                    display: 'flex', alignItems: 'center', gap: '6px', justifyContent: 'center'
+                    flex: 1,
+                    padding: '6px 8px',
+                    borderRadius: '5px',
+                    background: 'rgba(244,234,213,0.05)',
+                    border: '1px solid rgba(244,234,213,0.12)',
+                    color: '#F4EAD5',
+                    outline: 'none',
+                    fontSize: '11px',
+                    fontFamily: 'monospace',
                   }}
-                >
-                  <Play size={13} /> Start Recording
-                </button>
-              ) : (
-                <>
-                  {recordingStatus === 'recording' ? (
-                    <button
-                      onClick={onPauseRecording}
-                      style={{
-                        flex: 1, padding: '10px 12px', background: 'rgba(244,234,213,0.1)', color: '#F4EAD5',
-                        border: '1px solid rgba(244,234,213,0.2)', borderRadius: '6px', cursor: 'pointer', fontSize: '12px', fontWeight: 600,
-                        display: 'flex', alignItems: 'center', gap: '6px', justifyContent: 'center'
-                      }}
-                    >
-                      <Pause size={13} /> Pause
-                    </button>
-                  ) : (
-                    <button
-                      onClick={onResumeRecording}
-                      style={{
-                        flex: 1, padding: '10px 12px', background: 'var(--terracotta)', color: '#F4EAD5',
-                        border: 'none', borderRadius: '6px', cursor: 'pointer', fontSize: '12px', fontWeight: 600,
-                        display: 'flex', alignItems: 'center', gap: '6px', justifyContent: 'center'
-                      }}
-                    >
-                      <Play size={13} /> Resume
-                    </button>
-                  )}
-                  <button
-                    onClick={onStopRecording}
-                    style={{
-                      flex: 1, padding: '10px 12px', background: 'rgba(232,176,154,0.15)', color: '#E8B09A',
-                      border: '1px solid rgba(232,176,154,0.3)', borderRadius: '6px', cursor: 'pointer', fontSize: '12px', fontWeight: 600,
-                      display: 'flex', alignItems: 'center', gap: '6px', justifyContent: 'center'
-                    }}
-                  >
-                    <Square size={13} /> Stop & Save
-                  </button>
-                </>
+                />
+              </div>
+              {isAiEnabled && (
+                <p style={{ fontSize: '10px', color: 'rgba(138,166,142,0.6)', lineHeight: '1.4', margin: 0, fontFamily: 'Inter' }}>
+                  AI listens during recording and generates questions & whiteboard drawings. Switch to the Script tab to view suggestions.
+                </p>
               )}
             </div>
-
-            {/* Help indicator */}
-            <span style={{ fontSize: '10.5px', color: 'rgba(244,234,213,0.35)', textAlign: 'center', lineHeight: '1.4' }}>
-              Note: Capture constraints will prompt you to share the current browser tab. Prefer sharing the tab for optimal tab-audio recording.
-            </span>
           </section>
+
+          <div className="sb-divider" />
 
           {/* Crash recovery block */}
           {hasRecoverableVideo && (
@@ -949,6 +1042,9 @@ export const SidebarControls: React.FC<SidebarControlsProps> = ({
 
         </div>
       )}
+
+      {/* ---- AI Copilot Settings (appended at the end of Record tab) ---- */}
+      {/* Rendered inline here by reading activeTab from within the tab block above */}
 
       {/* Collapsed icon strip */}
       {isCollapsed && (

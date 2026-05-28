@@ -309,39 +309,49 @@ export const TimerWidget: React.FC<{ theme: 'light' | 'dark' }> = ({ theme: _the
   );
 };
 
-// CHECKLIST / AGENDA WIDGET
-export const ChecklistWidget: React.FC = () => {
-  const [items, setItems] = useState([
-    { id: 1, text: 'Introduce the Core Conflict', done: true },
-    { id: 2, text: 'Map the 8 Virtues of Self', done: false },
-    { id: 3, text: 'Examine Cognitive Appraisals', done: false },
-    { id: 4, text: 'Self Inquiry & Integration', done: false },
-  ]);
+interface ChecklistWidgetProps {
+  items?: { id: number; text: string; done: boolean }[];
+  onChange?: (newItems: { id: number; text: string; done: boolean }[]) => void;
+}
+
+export const ChecklistWidget: React.FC<ChecklistWidgetProps> = ({
+  items: propItems = [],
+  onChange,
+}) => {
+  const [items, setItems] = useState(propItems);
   const [newItemText, setNewItemText] = useState('');
 
+  useEffect(() => {
+    setItems(propItems);
+  }, [propItems]);
+
   const toggleDone = (id: number) => {
-    setItems((prev) =>
-      prev.map((item) => (item.id === id ? { ...item, done: !item.done } : item))
-    );
+    const updated = items.map((item) => (item.id === id ? { ...item, done: !item.done } : item));
+    setItems(updated);
+    if (onChange) onChange(updated);
   };
 
   const handleAddItem = (e: React.FormEvent) => {
     e.preventDefault();
     if (!newItemText.trim()) return;
-    setItems((prev) => [
-      ...prev,
+    const updated = [
+      ...items,
       { id: Date.now(), text: newItemText.trim(), done: false },
-    ]);
+    ];
+    setItems(updated);
     setNewItemText('');
+    if (onChange) onChange(updated);
   };
 
   const deleteItem = (id: number) => {
-    setItems((prev) => prev.filter((item) => item.id !== id));
+    const updated = items.filter((item) => item.id !== id);
+    setItems(updated);
+    if (onChange) onChange(updated);
   };
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', fontFamily: 'Inter' }}>
-      <ul style={{ listStyle: 'none', display: 'flex', flexDirection: 'column', gap: '10px', maxHeight: '320px', overflowY: 'auto' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', fontFamily: 'Inter' }}>
+      <ul style={{ listStyle: 'none', display: 'flex', flexDirection: 'column', gap: '12px', maxHeight: '320px', overflowY: 'auto' }}>
         {items.map((item) => (
           <li
             key={item.id}
@@ -349,9 +359,9 @@ export const ChecklistWidget: React.FC = () => {
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'space-between',
-              fontSize: '22px',
+              fontSize: '28px',
               opacity: item.done ? 0.5 : 1,
-              padding: '4px 0',
+              padding: '6px 0',
             }}
           >
             <div
@@ -359,15 +369,15 @@ export const ChecklistWidget: React.FC = () => {
               style={{
                 display: 'flex',
                 alignItems: 'center',
-                gap: '12px',
+                gap: '16px',
                 cursor: 'pointer',
                 userSelect: 'none',
               }}
             >
               {item.done ? (
-                <CheckSquare size={22} style={{ color: 'var(--terracotta)' }} />
+                <CheckSquare size={30} style={{ color: 'var(--terracotta)' }} />
               ) : (
-                <Square size={22} />
+                <Square size={30} />
               )}
               <span style={{ textDecoration: item.done ? 'line-through' : 'none' }}>
                 {item.text}
@@ -381,17 +391,17 @@ export const ChecklistWidget: React.FC = () => {
                 color: 'var(--terracotta)',
                 opacity: 0.6,
                 cursor: 'pointer',
-                padding: '6px',
+                padding: '8px',
                 display: 'flex',
               }}
             >
-              <Trash2 size={16} />
+              <Trash2 size={22} />
             </button>
           </li>
         ))}
       </ul>
 
-      <form onSubmit={handleAddItem} style={{ display: 'flex', gap: '8px', marginTop: '10px' }}>
+      <form onSubmit={handleAddItem} style={{ display: 'flex', gap: '10px', marginTop: '12px' }}>
         <input
           type="text"
           value={newItemText}
@@ -401,10 +411,10 @@ export const ChecklistWidget: React.FC = () => {
           data-enable-grammarly="false"
           style={{
             flex: 1,
-            padding: '10px 14px',
-            fontSize: '18px',
+            padding: '12px 16px',
+            fontSize: '22px',
             border: '1.2px solid var(--border-color)',
-            borderRadius: '6px',
+            borderRadius: '8px',
             outline: 'none',
             backgroundColor: 'transparent',
             color: 'var(--warm-ink)',
@@ -416,15 +426,15 @@ export const ChecklistWidget: React.FC = () => {
             background: 'var(--terracotta)',
             border: 'none',
             color: 'var(--warm-ivory)',
-            padding: '10px 16px',
-            borderRadius: '6px',
+            padding: '12px 20px',
+            borderRadius: '8px',
             cursor: 'pointer',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
           }}
         >
-          <Plus size={20} />
+          <Plus size={24} />
         </button>
       </form>
     </div>
@@ -432,16 +442,32 @@ export const ChecklistWidget: React.FC = () => {
 };
 
 // MONOLOGUE TEXT SCRATCHPAD
-export const ScratchpadWidget: React.FC = () => {
-  const [text, setText] = useState(
-    "JOURNAL OUTLINE\n----------------\n- Virtue is the capability of psychological regulation.\n- Adventure challenges safety to force evolution.\n- Compassion holds the tension of self/other.\n\nDouble click values in the circle graph to expand."
-  );
+interface ScratchpadWidgetProps {
+  text?: string;
+  onChange?: (val: string) => void;
+}
+
+export const ScratchpadWidget: React.FC<ScratchpadWidgetProps> = ({
+  text: propText = '',
+  onChange,
+}) => {
+  const [text, setText] = useState(propText);
+
+  useEffect(() => {
+    setText(propText);
+  }, [propText]);
+
+  const handleChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    const val = e.target.value;
+    setText(val);
+    if (onChange) onChange(val);
+  };
 
   return (
     <div style={{ fontFamily: 'Lora, serif' }}>
       <textarea
         value={text}
-        onChange={(e) => setText(e.target.value)}
+        onChange={handleChange}
         rows={8}
         spellCheck={false}
         data-enable-grammarly="false"
@@ -578,7 +604,7 @@ interface MediaWidgetProps {
 }
 
 export const MediaWidget: React.FC<MediaWidgetProps> = ({ width, setWidth }) => {
-  const [activeTab, setActiveTab] = useState<'image' | 'web'>('image');
+  const [activeTab, setActiveTab] = useState<'image' | 'web'>('web');
   const [imageSrc, setImageSrc] = useState<string>('');
   const [imageUrlInput, setImageUrlInput] = useState<string>('');
   const [webUrlInput, setWebUrlInput] = useState<string>('');

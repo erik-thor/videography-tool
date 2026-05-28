@@ -38,8 +38,16 @@ interface DragState {
   startPhotoY: number;
 }
 
-export const CorkboardView: React.FC = () => {
-  const [photos, setPhotos] = useState<PinnedPhoto[]>([]);
+interface CorkboardViewProps {
+  data?: { photos: PinnedPhoto[] };
+  onChange?: (newData: { photos: PinnedPhoto[] }) => void;
+}
+
+export const CorkboardView: React.FC<CorkboardViewProps> = ({
+  data = { photos: [] },
+  onChange,
+}) => {
+  const [photos, setPhotos] = useState<PinnedPhoto[]>(data.photos);
   const [showUploadPanel, setShowUploadPanel] = useState(false);
   const [urlInput, setUrlInput] = useState('');
   const [dragging, setDragging] = useState<DragState | null>(null);
@@ -47,12 +55,22 @@ export const CorkboardView: React.FC = () => {
   const boardRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  useEffect(() => {
+    setPhotos(data.photos);
+  }, [data.photos]);
+
+  const handleUpdate = (updatedPhotos: PinnedPhoto[]) => {
+    if (onChange) {
+      onChange({ photos: updatedPhotos });
+    }
+  };
+
   const addPhoto = (src: string) => {
     const board = boardRef.current;
     const bw = board?.offsetWidth ?? 1920;
     const bh = board?.offsetHeight ?? 1080;
     const w = 240;
-    setPhotos(prev => [...prev, {
+    const nextPhotos = [...photos, {
       id: Date.now(),
       src,
       x: Math.random() * (bw - w - 100) + 60,
@@ -61,7 +79,9 @@ export const CorkboardView: React.FC = () => {
       pinColor: PIN_COLORS[Math.floor(Math.random() * PIN_COLORS.length)],
       caption: '',
       width: w,
-    }]);
+    }];
+    setPhotos(nextPhotos);
+    handleUpdate(nextPhotos);
     setShowUploadPanel(false);
     setUrlInput('');
   };
@@ -80,6 +100,11 @@ export const CorkboardView: React.FC = () => {
   const handleUrlLoad = () => {
     if (urlInput.trim()) addPhoto(urlInput.trim());
   };
+
+  const photosRef = useRef(photos);
+  useEffect(() => {
+    photosRef.current = photos;
+  }, [photos]);
 
   // Drag handling
   const handleMouseDown = (e: React.MouseEvent, id: number) => {
@@ -101,7 +126,10 @@ export const CorkboardView: React.FC = () => {
       const dy = (e.clientY - dragging.startMouseY) * scaleY;
       setPhotos(prev => prev.map(p => p.id === dragging.id ? { ...p, x: dragging.startPhotoX + dx, y: dragging.startPhotoY + dy } : p));
     };
-    const handleUp = () => setDragging(null);
+    const handleUp = () => {
+      setDragging(null);
+      handleUpdate(photosRef.current);
+    };
     window.addEventListener('mousemove', handleMove);
     window.addEventListener('mouseup', handleUp);
     return () => { window.removeEventListener('mousemove', handleMove); window.removeEventListener('mouseup', handleUp); };
@@ -156,9 +184,16 @@ export const CorkboardView: React.FC = () => {
                 className="caption-input"
                 autoFocus
                 value={photo.caption}
-                onChange={e => setPhotos(prev => prev.map(p => p.id === photo.id ? { ...p, caption: e.target.value } : p))}
+                onChange={e => {
+                  const val = e.target.value;
+                  const updated = photos.map(p => p.id === photo.id ? { ...p, caption: val } : p);
+                  setPhotos(updated);
+                  handleUpdate(updated);
+                }}
                 onBlur={() => setEditingCaption(null)}
                 onKeyDown={e => e.key === 'Enter' && setEditingCaption(null)}
+                spellCheck={false}
+                data-enable-grammarly="false"
                 style={{ width: '100%', border: 'none', outline: 'none', textAlign: 'center', fontFamily: 'Lora, serif', fontSize: '13px', backgroundColor: 'transparent', color: '#555', marginTop: '8px' }}
               />
             ) : (
@@ -173,7 +208,11 @@ export const CorkboardView: React.FC = () => {
           {/* Delete button */}
           <button
             className="delete-btn"
-            onClick={() => setPhotos(prev => prev.filter(p => p.id !== photo.id))}
+            onClick={() => {
+              const updated = photos.filter(p => p.id !== photo.id);
+              setPhotos(updated);
+              handleUpdate(updated);
+            }}
             style={{
               position: 'absolute', top: '-8px', right: '-8px',
               width: '22px', height: '22px', borderRadius: '50%',

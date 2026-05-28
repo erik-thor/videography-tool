@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Heart, MessageSquare, Bell, Check, Edit2 } from 'lucide-react';
 
 interface CustomViewProps {
@@ -8,14 +8,40 @@ interface CustomViewProps {
 // -------------------------------------------------------------
 // 1. INTRO SCENE VIEW
 // -------------------------------------------------------------
-export const IntroSceneView: React.FC<CustomViewProps> = ({ theme }) => {
-  const [title, setTitle] = useState('The Physics of Self-Expression');
-  const [subtitle, setSubtitle] = useState('An Editorial Guide to Finding Your Authentic Voice');
-  const [author, setAuthor] = useState('Presented by Erik Thor');
+interface IntroSceneViewProps {
+  theme: 'light' | 'dark';
+  data?: { title: string; subtitle: string; author: string };
+  onChange?: (newData: { title: string; subtitle: string; author: string }) => void;
+}
+
+export const IntroSceneView: React.FC<IntroSceneViewProps> = ({
+  theme,
+  data = { title: '', subtitle: '', author: '' },
+  onChange,
+}) => {
+  const [title, setTitle] = useState(data.title);
+  const [subtitle, setSubtitle] = useState(data.subtitle);
+  const [author, setAuthor] = useState(data.author);
   
   const [isEditingTitle, setIsEditingTitle] = useState(false);
   const [isEditingSubtitle, setIsEditingSubtitle] = useState(false);
   const [isEditingAuthor, setIsEditingAuthor] = useState(false);
+
+  useEffect(() => {
+    setTitle(data.title);
+    setSubtitle(data.subtitle);
+    setAuthor(data.author);
+  }, [data.title, data.subtitle, data.author]);
+
+  const handleUpdate = (updatedFields: Partial<typeof data>) => {
+    if (onChange) {
+      onChange({
+        title: updatedFields.title !== undefined ? updatedFields.title : title,
+        subtitle: updatedFields.subtitle !== undefined ? updatedFields.subtitle : subtitle,
+        author: updatedFields.author !== undefined ? updatedFields.author : author,
+      });
+    }
+  };
 
   const isDark = theme === 'dark';
   const textColor = isDark ? '#F4EAD5' : '#2C1F15';
@@ -47,10 +73,16 @@ export const IntroSceneView: React.FC<CustomViewProps> = ({ theme }) => {
           {isEditingTitle ? (
             <textarea
               value={title}
-              onChange={(e) => setTitle(e.target.value)}
+              onChange={(e) => {
+                const val = e.target.value;
+                setTitle(val);
+                handleUpdate({ title: val });
+              }}
               onBlur={() => setIsEditingTitle(false)}
               onKeyDown={(e) => e.key === 'Enter' && setIsEditingTitle(false)}
               autoFocus
+              spellCheck={false}
+              data-enable-grammarly="false"
               style={{
                 width: '100%',
                 fontSize: '56px',
@@ -92,10 +124,16 @@ export const IntroSceneView: React.FC<CustomViewProps> = ({ theme }) => {
             <input
               type="text"
               value={subtitle}
-              onChange={(e) => setSubtitle(e.target.value)}
+              onChange={(e) => {
+                const val = e.target.value;
+                setSubtitle(val);
+                handleUpdate({ subtitle: val });
+              }}
               onBlur={() => setIsEditingSubtitle(false)}
               onKeyDown={(e) => e.key === 'Enter' && setIsEditingSubtitle(false)}
               autoFocus
+              spellCheck={false}
+              data-enable-grammarly="false"
               style={{
                 width: '100%',
                 fontSize: '20px',
@@ -142,10 +180,16 @@ export const IntroSceneView: React.FC<CustomViewProps> = ({ theme }) => {
             <input
               type="text"
               value={author}
-              onChange={(e) => setAuthor(e.target.value)}
+              onChange={(e) => {
+                const val = e.target.value;
+                setAuthor(val);
+                handleUpdate({ author: val });
+              }}
               onBlur={() => setIsEditingAuthor(false)}
               onKeyDown={(e) => e.key === 'Enter' && setIsEditingAuthor(false)}
               autoFocus
+              spellCheck={false}
+              data-enable-grammarly="false"
               style={{
                 fontSize: '15px',
                 fontFamily: 'Lora, serif',
@@ -185,21 +229,49 @@ export const IntroSceneView: React.FC<CustomViewProps> = ({ theme }) => {
 // -------------------------------------------------------------
 // 2. ABOUT ME SCENE VIEW
 // -------------------------------------------------------------
-export const AboutMeSceneView: React.FC<CustomViewProps> = ({ theme }) => {
-  const [name, setName] = useState('Erik Thor');
-  const [role, setRole] = useState('Videographer & Personality Researcher');
-  const [description, setDescription] = useState(
-    'Exploring the intersections of analytical psychology, videography, and creative flow. I build interactive visual systems that help creators organize thoughts and narrate their monologues.'
-  );
+interface AboutMeSceneViewProps {
+  theme: 'light' | 'dark';
+  data?: { name: string; role: string; description: string; liked?: boolean; commented?: boolean; subscribed?: boolean };
+  onChange?: (newData: { name: string; role: string; description: string; liked?: boolean; commented?: boolean; subscribed?: boolean }) => void;
+}
+
+export const AboutMeSceneView: React.FC<AboutMeSceneViewProps> = ({
+  theme,
+  data = { name: '', role: '', description: '', liked: false, commented: false, subscribed: false },
+  onChange,
+}) => {
+  const [name, setName] = useState(data.name);
+  const [role, setRole] = useState(data.role);
+  const [description, setDescription] = useState(data.description);
 
   const [isEditingName, setIsEditingName] = useState(false);
   const [isEditingRole, setIsEditingRole] = useState(false);
   const [isEditingDescription, setIsEditingDescription] = useState(false);
 
+  // Sync state from props
+  useEffect(() => {
+    setName(data.name);
+    setRole(data.role);
+    setDescription(data.description);
+  }, [data.name, data.role, data.description]);
+
   // Interaction callout states
-  const [liked, setLiked] = useState(false);
-  const [subscribed, setSubscribed] = useState(false);
-  const [commented, setCommented] = useState(false);
+  const liked = data.liked ?? false;
+  const subscribed = data.subscribed ?? false;
+  const commented = data.commented ?? false;
+
+  const handleUpdate = (updatedFields: Partial<typeof data>) => {
+    if (onChange) {
+      onChange({
+        name: updatedFields.name !== undefined ? updatedFields.name : name,
+        role: updatedFields.role !== undefined ? updatedFields.role : role,
+        description: updatedFields.description !== undefined ? updatedFields.description : description,
+        liked: updatedFields.liked !== undefined ? updatedFields.liked : liked,
+        commented: updatedFields.commented !== undefined ? updatedFields.commented : commented,
+        subscribed: updatedFields.subscribed !== undefined ? updatedFields.subscribed : subscribed,
+      });
+    }
+  };
 
   const isDark = theme === 'dark';
   const textColor = isDark ? '#F4EAD5' : '#2C1F15';
@@ -264,10 +336,16 @@ export const AboutMeSceneView: React.FC<CustomViewProps> = ({ theme }) => {
             <input
               type="text"
               value={name}
-              onChange={(e) => setName(e.target.value)}
+              onChange={(e) => {
+                const val = e.target.value;
+                setName(val);
+                handleUpdate({ name: val });
+              }}
               onBlur={() => setIsEditingName(false)}
               onKeyDown={(e) => e.key === 'Enter' && setIsEditingName(false)}
               autoFocus
+              spellCheck={false}
+              data-enable-grammarly="false"
               style={{
                 width: '100%',
                 fontSize: '32px',
@@ -302,10 +380,16 @@ export const AboutMeSceneView: React.FC<CustomViewProps> = ({ theme }) => {
             <input
               type="text"
               value={role}
-              onChange={(e) => setRole(e.target.value)}
+              onChange={(e) => {
+                const val = e.target.value;
+                setRole(val);
+                handleUpdate({ role: val });
+              }}
               onBlur={() => setIsEditingRole(false)}
               onKeyDown={(e) => e.key === 'Enter' && setIsEditingRole(false)}
               autoFocus
+              spellCheck={false}
+              data-enable-grammarly="false"
               style={{
                 width: '100%',
                 fontSize: '14px',
@@ -342,10 +426,16 @@ export const AboutMeSceneView: React.FC<CustomViewProps> = ({ theme }) => {
           {isEditingDescription ? (
             <textarea
               value={description}
-              onChange={(e) => setDescription(e.target.value)}
+              onChange={(e) => {
+                const val = e.target.value;
+                setDescription(val);
+                handleUpdate({ description: val });
+              }}
               onBlur={() => setIsEditingDescription(false)}
               rows={4}
               autoFocus
+              spellCheck={false}
+              data-enable-grammarly="false"
               style={{
                 width: '100%',
                 fontSize: '15px',
@@ -382,7 +472,7 @@ export const AboutMeSceneView: React.FC<CustomViewProps> = ({ theme }) => {
         <div style={{ display: 'flex', gap: '16px', width: '100%', marginTop: '10px', justifyContent: 'center' }}>
           {/* Like Button */}
           <button
-            onClick={() => setLiked(!liked)}
+            onClick={() => handleUpdate({ liked: !liked })}
             style={{
               display: 'flex',
               alignItems: 'center',
@@ -405,7 +495,7 @@ export const AboutMeSceneView: React.FC<CustomViewProps> = ({ theme }) => {
 
           {/* Comment Callout */}
           <button
-            onClick={() => setCommented(!commented)}
+            onClick={() => handleUpdate({ commented: !commented })}
             style={{
               display: 'flex',
               alignItems: 'center',
@@ -428,7 +518,7 @@ export const AboutMeSceneView: React.FC<CustomViewProps> = ({ theme }) => {
 
           {/* Subscribe Callout */}
           <button
-            onClick={() => setSubscribed(!subscribed)}
+            onClick={() => handleUpdate({ subscribed: !subscribed })}
             style={{
               display: 'flex',
               alignItems: 'center',
@@ -457,21 +547,39 @@ export const AboutMeSceneView: React.FC<CustomViewProps> = ({ theme }) => {
 // -------------------------------------------------------------
 // 3. PLAN SCENE VIEW
 // -------------------------------------------------------------
-export const PlanSceneView: React.FC<CustomViewProps> = ({ theme }) => {
-  const [title, setTitle] = useState('Today’s Roadmap');
-  const [steps, setSteps] = useState([
-    { id: 1, text: 'The Core Conflict: Safety vs. Growth', active: true },
-    { id: 2, text: 'Mapping the 8 Virtues of Self', active: false },
-    { id: 3, text: 'Cognitive Appraisals & Reframing', active: false },
-    { id: 4, text: 'Self Inquiry & Integration Monologue', active: false },
-  ]);
+interface PlanSceneViewProps {
+  theme: 'light' | 'dark';
+  data?: { title: string; steps: { id: number; text: string; active: boolean }[] };
+  onChange?: (newData: { title: string; steps: { id: number; text: string; active: boolean }[] }) => void;
+}
+
+export const PlanSceneView: React.FC<PlanSceneViewProps> = ({
+  theme,
+  data = { title: '', steps: [] },
+  onChange,
+}) => {
+  const [title, setTitle] = useState(data.title);
+  const [steps, setSteps] = useState(data.steps);
 
   const [isEditingTitle, setIsEditingTitle] = useState(false);
   const [editingStepId, setEditingStepId] = useState<number | null>(null);
   const [tempStepText, setTempStepText] = useState('');
 
+  useEffect(() => {
+    setTitle(data.title);
+    setSteps(data.steps);
+  }, [data.title, data.steps]);
+
+  const handleUpdate = (updatedTitle: string, updatedSteps: typeof steps) => {
+    if (onChange) {
+      onChange({ title: updatedTitle, steps: updatedSteps });
+    }
+  };
+
   const toggleStepActive = (id: number) => {
-    setSteps(prev => prev.map(s => s.id === id ? { ...s, active: !s.active } : s));
+    const updated = steps.map(s => s.id === id ? { ...s, active: !s.active } : s);
+    setSteps(updated);
+    handleUpdate(title, updated);
   };
 
   const startEditingStep = (id: number, text: string) => {
@@ -480,10 +588,13 @@ export const PlanSceneView: React.FC<CustomViewProps> = ({ theme }) => {
   };
 
   const saveStepEdit = (id: number) => {
+    let updated = steps;
     if (tempStepText.trim()) {
-      setSteps(prev => prev.map(s => s.id === id ? { ...s, text: tempStepText.trim() } : s));
+      updated = steps.map(s => s.id === id ? { ...s, text: tempStepText.trim() } : s);
+      setSteps(updated);
     }
     setEditingStepId(null);
+    handleUpdate(title, updated);
   };
 
   const isDark = theme === 'dark';
@@ -514,10 +625,16 @@ export const PlanSceneView: React.FC<CustomViewProps> = ({ theme }) => {
             <input
               type="text"
               value={title}
-              onChange={(e) => setTitle(e.target.value)}
+              onChange={(e) => {
+                const val = e.target.value;
+                setTitle(val);
+                handleUpdate(val, steps);
+              }}
               onBlur={() => setIsEditingTitle(false)}
               onKeyDown={(e) => e.key === 'Enter' && setIsEditingTitle(false)}
               autoFocus
+              spellCheck={false}
+              data-enable-grammarly="false"
               style={{
                 fontSize: '36px',
                 fontFamily: 'Lora, serif',
@@ -613,6 +730,8 @@ export const PlanSceneView: React.FC<CustomViewProps> = ({ theme }) => {
                       onBlur={() => saveStepEdit(step.id)}
                       onKeyDown={(e) => e.key === 'Enter' && saveStepEdit(step.id)}
                       autoFocus
+                      spellCheck={false}
+                      data-enable-grammarly="false"
                       style={{
                         width: '100%',
                         fontSize: '18px',
@@ -675,14 +794,40 @@ export const PlanSceneView: React.FC<CustomViewProps> = ({ theme }) => {
 // -------------------------------------------------------------
 // 4. OUTRO SCENE VIEW
 // -------------------------------------------------------------
-export const OutroSceneView: React.FC<CustomViewProps> = ({ theme }) => {
-  const [title, setTitle] = useState('Thank You for Watching');
-  const [subtitle, setSubtitle] = useState('Share your self-reflection answers in the comments below.');
-  const [callToAction, setCallToAction] = useState('Like & subscribe to support creative monologues.');
+interface OutroSceneViewProps {
+  theme: 'light' | 'dark';
+  data?: { title: string; subtitle: string; callToAction: string };
+  onChange?: (newData: { title: string; subtitle: string; callToAction: string }) => void;
+}
+
+export const OutroSceneView: React.FC<OutroSceneViewProps> = ({
+  theme,
+  data = { title: '', subtitle: '', callToAction: '' },
+  onChange,
+}) => {
+  const [title, setTitle] = useState(data.title);
+  const [subtitle, setSubtitle] = useState(data.subtitle);
+  const [callToAction, setCallToAction] = useState(data.callToAction);
 
   const [isEditingTitle, setIsEditingTitle] = useState(false);
   const [isEditingSubtitle, setIsEditingSubtitle] = useState(false);
   const [isEditingCall, setIsEditingCall] = useState(false);
+
+  useEffect(() => {
+    setTitle(data.title);
+    setSubtitle(data.subtitle);
+    setCallToAction(data.callToAction);
+  }, [data.title, data.subtitle, data.callToAction]);
+
+  const handleUpdate = (updatedFields: Partial<typeof data>) => {
+    if (onChange) {
+      onChange({
+        title: updatedFields.title !== undefined ? updatedFields.title : title,
+        subtitle: updatedFields.subtitle !== undefined ? updatedFields.subtitle : subtitle,
+        callToAction: updatedFields.callToAction !== undefined ? updatedFields.callToAction : callToAction,
+      });
+    }
+  };
 
   const isDark = theme === 'dark';
   const textColor = isDark ? '#F4EAD5' : '#2C1F15';
@@ -714,10 +859,16 @@ export const OutroSceneView: React.FC<CustomViewProps> = ({ theme }) => {
             <input
               type="text"
               value={title}
-              onChange={(e) => setTitle(e.target.value)}
+              onChange={(e) => {
+                const val = e.target.value;
+                setTitle(val);
+                handleUpdate({ title: val });
+              }}
               onBlur={() => setIsEditingTitle(false)}
               onKeyDown={(e) => e.key === 'Enter' && setIsEditingTitle(false)}
               autoFocus
+              spellCheck={false}
+              data-enable-grammarly="false"
               style={{
                 width: '100%',
                 fontSize: '44px',
@@ -754,9 +905,15 @@ export const OutroSceneView: React.FC<CustomViewProps> = ({ theme }) => {
           {isEditingSubtitle ? (
             <textarea
               value={subtitle}
-              onChange={(e) => setSubtitle(e.target.value)}
+              onChange={(e) => {
+                const val = e.target.value;
+                setSubtitle(val);
+                handleUpdate({ subtitle: val });
+              }}
               onBlur={() => setIsEditingSubtitle(false)}
               autoFocus
+              spellCheck={false}
+              data-enable-grammarly="false"
               style={{
                 width: '100%',
                 fontSize: '18px',
@@ -799,10 +956,16 @@ export const OutroSceneView: React.FC<CustomViewProps> = ({ theme }) => {
             <input
               type="text"
               value={callToAction}
-              onChange={(e) => setCallToAction(e.target.value)}
+              onChange={(e) => {
+                const val = e.target.value;
+                setCallToAction(val);
+                handleUpdate({ callToAction: val });
+              }}
               onBlur={() => setIsEditingCall(false)}
               onKeyDown={(e) => e.key === 'Enter' && setIsEditingCall(false)}
               autoFocus
+              spellCheck={false}
+              data-enable-grammarly="false"
               style={{
                 width: '100%',
                 fontSize: '14px',

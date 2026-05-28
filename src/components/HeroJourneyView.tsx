@@ -28,30 +28,16 @@ const NODE_COLORS = [
 
 // Default Hero's Journey stages laid out in a meaningful arc
 const DEFAULT_NODES: JourneyNode[] = [
-  { id: 'n1', x: 140, y: 540, label: 'Ordinary World', sublabel: 'Where you begin', shape: 'circle', color: '#4A7C59' },
-  { id: 'n2', x: 380, y: 380, label: 'Call to Adventure', sublabel: 'The challenge arrives', shape: 'circle', color: '#4A7C59' },
-  { id: 'n3', x: 620, y: 260, label: 'Refusal', sublabel: 'Fear holds you back', shape: 'circle', color: '#8B6914' },
-  { id: 'n4', x: 870, y: 200, label: 'Meeting the Mentor', sublabel: 'Wisdom appears', shape: 'circle', color: '#4A7C59' },
-  { id: 'n5', x: 1120, y: 260, label: 'Crossing the Threshold', sublabel: 'The journey begins', shape: 'rect', color: '#5C3A1E' },
-  { id: 'n6', x: 1340, y: 420, label: 'Tests & Allies', sublabel: 'The trials of growth', shape: 'circle', color: '#8B6914' },
-  { id: 'n7', x: 1480, y: 620, label: 'The Ordeal', sublabel: 'The darkest moment', shape: 'rect', color: '#B8674A' },
-  { id: 'n8', x: 1340, y: 820, label: 'The Reward', sublabel: 'What you claim', shape: 'circle', color: '#4A7C59' },
-  { id: 'n9', x: 1050, y: 920, label: 'The Road Back', sublabel: 'Returning transformed', shape: 'circle', color: '#4A7C59' },
-  { id: 'n10', x: 760, y: 880, label: 'Resurrection', sublabel: 'Final transformation', shape: 'rect', color: '#B8674A' },
-  { id: 'n11', x: 480, y: 760, label: 'Return with Elixir', sublabel: 'Sharing the gift', shape: 'circle', color: '#4A7C59' },
+  { id: 'n1', x: 250, y: 540, label: 'Ordinary World', sublabel: 'Where you begin', shape: 'circle', color: '#4A7C59' },
+  { id: 'n2', x: 650, y: 300, label: 'Call to Adventure', sublabel: 'The challenge arrives', shape: 'circle', color: '#4A7C59' },
+  { id: 'n3', x: 1150, y: 300, label: 'The Ordeal', sublabel: 'The darkest moment', shape: 'rect', color: '#B8674A' },
+  { id: 'n4', x: 1550, y: 540, label: 'Return with Elixir', sublabel: 'Sharing the gift', shape: 'circle', color: '#4A7C59' }
 ];
 
 const DEFAULT_PATHS: JourneyPath[] = [
   { id: 'p1', fromId: 'n1', toId: 'n2' },
   { id: 'p2', fromId: 'n2', toId: 'n3' },
-  { id: 'p3', fromId: 'n3', toId: 'n4' },
-  { id: 'p4', fromId: 'n4', toId: 'n5' },
-  { id: 'p5', fromId: 'n5', toId: 'n6' },
-  { id: 'p6', fromId: 'n6', toId: 'n7' },
-  { id: 'p7', fromId: 'n7', toId: 'n8' },
-  { id: 'p8', fromId: 'n8', toId: 'n9' },
-  { id: 'p9', fromId: 'n9', toId: 'n10' },
-  { id: 'p10', fromId: 'n10', toId: 'n11' },
+  { id: 'p3', fromId: 'n3', toId: 'n4' }
 ];
 
 // Compute a smooth cubic bezier dirt path between two points
@@ -79,9 +65,17 @@ function nodeRadius(node: JourneyNode): number {
 
 type ToolMode = 'select' | 'connect' | 'add';
 
-export const HeroJourneyView: React.FC = () => {
-  const [nodes, setNodes] = useState<JourneyNode[]>(DEFAULT_NODES);
-  const [paths, setPaths] = useState<JourneyPath[]>(DEFAULT_PATHS);
+interface HeroJourneyViewProps {
+  data?: { nodes: JourneyNode[]; paths: JourneyPath[] };
+  onChange?: (data: { nodes: JourneyNode[]; paths: JourneyPath[] }) => void;
+}
+
+export const HeroJourneyView: React.FC<HeroJourneyViewProps> = ({
+  data = { nodes: DEFAULT_NODES, paths: DEFAULT_PATHS },
+  onChange,
+}) => {
+  const [nodes, setNodes] = useState<JourneyNode[]>(data.nodes);
+  const [paths, setPaths] = useState<JourneyPath[]>(data.paths);
   const [mode, setMode] = useState<ToolMode>('select');
   const [selectedNode, setSelectedNode] = useState<string | null>(null);
   const [connectingFrom, setConnectingFrom] = useState<string | null>(null);
@@ -89,6 +83,18 @@ export const HeroJourneyView: React.FC = () => {
   const [draggingNode, setDraggingNode] = useState<{ id: string; startMx: number; startMy: number; startNx: number; startNy: number } | null>(null);
   const svgRef = useRef<SVGSVGElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+
+  // Sync state with props when data changes
+  useEffect(() => {
+    setNodes(data.nodes);
+    setPaths(data.paths);
+  }, [data.nodes, data.paths]);
+
+  // Keep stateRef in sync for drag-end callbacks without registering listeners repeatedly
+  const stateRef = useRef({ nodes, paths });
+  useEffect(() => {
+    stateRef.current = { nodes, paths };
+  }, [nodes, paths]);
 
   const getSVGCoords = useCallback((e: MouseEvent | React.MouseEvent): { x: number; y: number } => {
     const svg = svgRef.current;
@@ -116,7 +122,12 @@ export const HeroJourneyView: React.FC = () => {
         : n
       ));
     };
-    const handleUp = () => setDraggingNode(null);
+    const handleUp = () => {
+      setDraggingNode(null);
+      if (onChange) {
+        onChange({ nodes: stateRef.current.nodes, paths: stateRef.current.paths });
+      }
+    };
     window.addEventListener('mousemove', handleMove);
     window.addEventListener('mouseup', handleUp);
     return () => { window.removeEventListener('mousemove', handleMove); window.removeEventListener('mouseup', handleUp); };
@@ -135,7 +146,9 @@ export const HeroJourneyView: React.FC = () => {
         // Check no duplicate
         const exists = paths.find(p => (p.fromId === connectingFrom && p.toId === node.id) || (p.fromId === node.id && p.toId === connectingFrom));
         if (!exists) {
-          setPaths(prev => [...prev, { id: `p${Date.now()}`, fromId: connectingFrom, toId: node.id }]);
+          const newPaths = [...paths, { id: `p${Date.now()}`, fromId: connectingFrom, toId: node.id }];
+          setPaths(newPaths);
+          if (onChange) onChange({ nodes, paths: newPaths });
         }
         setConnectingFrom(null);
       }
@@ -154,9 +167,11 @@ export const HeroJourneyView: React.FC = () => {
         shape: 'circle',
         color: NODE_COLORS[0],
       };
-      setNodes(prev => [...prev, newNode]);
+      const newNodes = [...nodes, newNode];
+      setNodes(newNodes);
       setMode('select');
       setSelectedNode(newNode.id);
+      if (onChange) onChange({ nodes: newNodes, paths });
     } else {
       setSelectedNode(null);
       if (mode === 'connect') setConnectingFrom(null);
@@ -165,9 +180,12 @@ export const HeroJourneyView: React.FC = () => {
 
   const deleteSelected = () => {
     if (!selectedNode) return;
-    setNodes(prev => prev.filter(n => n.id !== selectedNode));
-    setPaths(prev => prev.filter(p => p.fromId !== selectedNode && p.toId !== selectedNode));
+    const newNodes = nodes.filter(n => n.id !== selectedNode);
+    const newPaths = paths.filter(p => p.fromId !== selectedNode && p.toId !== selectedNode);
+    setNodes(newNodes);
+    setPaths(newPaths);
     setSelectedNode(null);
+    if (onChange) onChange({ nodes: newNodes, paths: newPaths });
   };
 
   const reset = () => {
@@ -176,6 +194,7 @@ export const HeroJourneyView: React.FC = () => {
     setSelectedNode(null);
     setConnectingFrom(null);
     setMode('select');
+    if (onChange) onChange({ nodes: DEFAULT_NODES, paths: DEFAULT_PATHS });
   };
 
   const selNode = nodes.find(n => n.id === selectedNode);
@@ -255,20 +274,38 @@ export const HeroJourneyView: React.FC = () => {
           <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
             <input
               value={selNode.label}
-              onChange={e => setNodes(prev => prev.map(n => n.id === selNode.id ? { ...n, label: e.target.value } : n))}
+              onChange={e => {
+                const val = e.target.value;
+                const newNodes = nodes.map(n => n.id === selNode.id ? { ...n, label: val } : n);
+                setNodes(newNodes);
+                if (onChange) onChange({ nodes: newNodes, paths });
+              }}
               placeholder="Stage name"
+              spellCheck={false}
+              data-enable-grammarly="false"
               style={{ padding: '6px 10px', borderRadius: '6px', border: '1px solid rgba(255,255,255,0.2)', background: 'rgba(255,255,255,0.1)', color: '#fff', fontSize: '14px', fontFamily: 'Lora, serif', width: '200px', outline: 'none' }}
             />
             <input
               value={selNode.sublabel}
-              onChange={e => setNodes(prev => prev.map(n => n.id === selNode.id ? { ...n, sublabel: e.target.value } : n))}
+              onChange={e => {
+                const val = e.target.value;
+                const newNodes = nodes.map(n => n.id === selNode.id ? { ...n, sublabel: val } : n);
+                setNodes(newNodes);
+                if (onChange) onChange({ nodes: newNodes, paths });
+              }}
               placeholder="Subtitle"
+              spellCheck={false}
+              data-enable-grammarly="false"
               style={{ padding: '6px 10px', borderRadius: '6px', border: '1px solid rgba(255,255,255,0.15)', background: 'rgba(255,255,255,0.07)', color: 'rgba(255,255,255,0.7)', fontSize: '12px', fontFamily: 'Inter', width: '200px', outline: 'none' }}
             />
           </div>
           <div style={{ display: 'flex', gap: '6px' }}>
             {['circle', 'rect'].map(s => (
-              <button key={s} onClick={() => setNodes(prev => prev.map(n => n.id === selNode.id ? { ...n, shape: s as 'circle' | 'rect' } : n))}
+              <button key={s} onClick={() => {
+                const newNodes = nodes.map(n => n.id === selNode.id ? { ...n, shape: s as 'circle' | 'rect' } : n);
+                setNodes(newNodes);
+                if (onChange) onChange({ nodes: newNodes, paths });
+              }}
                 style={{ padding: '6px 10px', background: selNode.shape === s ? 'rgba(255,255,255,0.2)' : 'transparent', border: '1px solid rgba(255,255,255,0.2)', borderRadius: '6px', color: '#fff', fontSize: '11px', cursor: 'pointer', fontFamily: 'Inter' }}>
                 {s === 'circle' ? '◯' : '▭'}
               </button>
@@ -276,14 +313,21 @@ export const HeroJourneyView: React.FC = () => {
           </div>
           <div style={{ display: 'flex', gap: '5px' }}>
             {NODE_COLORS.map(c => (
-              <button key={c} onClick={() => setNodes(prev => prev.map(n => n.id === selNode.id ? { ...n, color: c } : n))}
+              <button key={c} onClick={() => {
+                const newNodes = nodes.map(n => n.id === selNode.id ? { ...n, color: c } : n);
+                setNodes(newNodes);
+                if (onChange) onChange({ nodes: newNodes, paths });
+              }}
                 style={{ width: '20px', height: '20px', borderRadius: '50%', background: c, border: selNode.color === c ? '2px solid white' : '1px solid rgba(255,255,255,0.3)', cursor: 'pointer' }} />
             ))}
           </div>
           <button onClick={() => {
-            setPaths(prev => prev.filter(p => !(p.fromId === selNode.id || p.toId === selNode.id)));
-            setNodes(prev => prev.filter(n => n.id !== selNode.id));
+            const newNodes = nodes.filter(n => n.id !== selNode.id);
+            const newPaths = paths.filter(p => !(p.fromId === selNode.id || p.toId === selNode.id));
+            setNodes(newNodes);
+            setPaths(newPaths);
             setSelectedNode(null);
+            if (onChange) onChange({ nodes: newNodes, paths: newPaths });
           }} style={{ padding: '6px 10px', background: 'rgba(184,103,74,0.7)', border: 'none', borderRadius: '6px', color: '#fff', cursor: 'pointer', fontSize: '12px', fontFamily: 'Inter' }}>
             Remove
           </button>
@@ -304,7 +348,12 @@ export const HeroJourneyView: React.FC = () => {
           if (!from || !to) return null;
           const d = dirtPathD(from.x, from.y, to.x, to.y);
           return (
-            <g key={path.id} style={{ cursor: 'pointer' }} onClick={(e) => { e.stopPropagation(); setPaths(prev => prev.filter(p => p.id !== path.id)); }}>
+            <g key={path.id} style={{ cursor: 'pointer' }} onClick={(e) => {
+              e.stopPropagation();
+              const newPaths = paths.filter(p => p.id !== path.id);
+              setPaths(newPaths);
+              if (onChange) onChange({ nodes, paths: newPaths });
+            }}>
               {/* Outer edge — dark earth */}
               <path d={d} fill="none" stroke="#5C3A1E" strokeWidth="26" strokeLinecap="round" opacity="0.85" />
               {/* Middle — sandy earth */}
@@ -325,6 +374,7 @@ export const HeroJourneyView: React.FC = () => {
             <g
               key={node.id}
               onMouseDown={e => handleNodeMouseDown(e, node)}
+              onClick={e => e.stopPropagation()}
               style={{ cursor: mode === 'select' ? 'grab' : 'pointer', userSelect: 'none' }}
             >
               {/* Node shadow */}

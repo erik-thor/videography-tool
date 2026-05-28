@@ -136,7 +136,11 @@ export const getAudioMixer = () => {
     }
   }
 
-  return { audioCtx, soundboardGain, dest };
+  return {
+    audioCtx: audioCtx as AudioContext,
+    soundboardGain: soundboardGain as GainNode,
+    dest: dest as MediaStreamAudioDestinationNode
+  };
 };
 
 // Checks if there are any recovered chunks on boot
