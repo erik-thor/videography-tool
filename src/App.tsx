@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { SidebarControls } from './components/SidebarControls';
 import { WebcamSlot } from './components/WebcamSlot';
-import type { WebcamPosition, WebcamStyle } from './components/WebcamSlot';
+import type { WebcamPosition, WebcamStyle, WebcamShape } from './components/WebcamSlot';
 import { WhiteboardCanvas } from './components/WhiteboardCanvas';
 import { BottomToolbar } from './components/BottomToolbar';
 import { MediaCanvasView } from './components/MediaCanvasView';
@@ -12,6 +12,7 @@ import { WordCloudView } from './components/WordCloudView';
 import { DraggableWidget, TimerWidget, ChecklistWidget, ScratchpadWidget } from './components/Widgets';
 import { QuestionPromptWidget } from './components/QuestionPromptWidget';
 import { initAudio, TRANSITION_SOUNDS } from './utils/audioRegistry';
+import { useAudioLevel } from './utils/useAudioLevel';
 import { IntroSceneView, AboutMeSceneView, PlanSceneView, OutroSceneView } from './components/CustomSceneViews';
 import {
   saveRecordingChunk,
@@ -20,10 +21,31 @@ import {
   clearRecordingChunks,
   getAudioMixer,
   checkRecoverableChunks,
-  setSoundboardVolume
+  setSoundboardVolume,
+  saveWebcamChunk,
+  getWebcamChunks,
+  clearWebcamChunks,
+  getSegmentBlob,
+  getWebcamSegmentBlob,
+  deleteSegment,
+  deleteWebcamSegment,
+  cleanUnusedSegments,
+  saveRecordingManifest,
+  getRecordingManifest,
+  saveMetadataValue,
+  getMetadataValue
 } from './utils/videoRecorder';
+import { FFmpeg } from '@ffmpeg/ffmpeg';
+import { fetchFile, toBlobURL } from '@ffmpeg/util';
+
 
 export type ViewMode = 'whiteboard' | 'media' | 'corkboard' | 'bullet-journal' | 'hero-journey' | 'fullscreen-camera' | 'word-cloud';
+
+export interface VideoSegment {
+  segmentId: string;
+  startTime: number; // Position on the final timeline
+  duration: number;  // Cut-off point where user rolled back
+}
 
 export interface Scene {
   id: string;
@@ -144,6 +166,13 @@ function App() {
   const [viewMode, setViewMode] = useState<ViewMode>('media');
   const [diagramType, setDiagramType] = useState<'circle' | 'flowchart'>('circle');
 
+  // Mobile Phone Mode State
+  const [isMobileMode, setIsMobileMode] = useState<boolean>(() => {
+    const mobileUA = /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent);
+    const isPortrait = window.innerWidth < window.innerHeight;
+    return mobileUA || isPortrait;
+  });
+
   // Whiteboard Canvas State
   const [whiteboardActive, setWhiteboardActive] = useState<boolean>(false);
   const [whiteboardOnTop, setWhiteboardOnTop] = useState<boolean>(false);
@@ -156,9 +185,22 @@ function App() {
   // Webcam Slot State
   const [webcamVisible, setWebcamVisible] = useState<boolean>(true);
   const [webcamPosition, setWebcamPosition] = useState<WebcamPosition>('bottom-left');
-  const [webcamStyle, setWebcamStyle] = useState<WebcamStyle>('placeholder');
+  const [webcamStyle, setWebcamStyle] = useState<WebcamStyle>('none');
+  const [webcamShape, setWebcamShape] = useState<WebcamShape>('rectangle');
+  const [webcamAutoFraming, setWebcamAutoFraming] = useState<boolean>(true);
   const [webcamWidth, setWebcamWidth] = useState<number>(320);
   const [webcamHeight, setWebcamHeight] = useState<number>(180);
+  const [webcamX, setWebcamX] = useState<number | null>(null);
+  const [webcamY, setWebcamY] = useState<number | null>(null);
+
+  // Dynamically compute webcam height based on shape, width, and screen aspect ratio
+  useEffect(() => {
+    if (webcamShape === 'rectangle') {
+      setWebcamHeight(Math.round(isMobileMode ? (webcamWidth * 16 / 9) : (webcamWidth * 9 / 16)));
+    } else {
+      setWebcamHeight(webcamWidth);
+    }
+  }, [webcamWidth, isMobileMode, webcamShape]);
 
   // Hardware selections
   const [selectedMicId, setSelectedMicId] = useState<string>('');
@@ -169,6 +211,31 @@ function App() {
   const [recordingName, setRecordingName] = useState<string>('Monologue');
   const [recordingTime, setRecordingTime] = useState<number>(0);
   const [hasRecoverableVideo, setHasRecoverableVideo] = useState<boolean>(false);
+  
+  const [exportSeparately, setExportSeparately] = useState<boolean>(() => {
+    return localStorage.getItem('video_journal_export_separately') === 'true';
+  });
+  const [transcriptWords, setTranscriptWords] = useState<{ text: string; time: number }[]>([]);
+  
+  // Manifest state for WebM segment concatenation
+  const [recordingManifest, setRecordingManifest] = useState<VideoSegment[]>([]);
+  const [isExporting, setIsExporting] = useState<boolean>(false);
+  const [exportProgress, setExportProgress] = useState<string>('');
+
+  // Paused preview / manual rollback timeline states
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [playbackTime, setPlaybackTime] = useState<number>(0);
+  const [isPlayingPreview, setIsPlayingPreview] = useState<boolean>(false);
+  const [selectedRollbackTime, setSelectedRollbackTime] = useState<number | null>(null);
+
+  useEffect(() => {
+    localStorage.setItem('video_journal_export_separately', String(exportSeparately));
+  }, [exportSeparately]);
+
+  const recordingTimeValueRef = useRef<number>(0);
+  useEffect(() => {
+    recordingTimeValueRef.current = recordingTime;
+  }, [recordingTime]);
 
   // AI Copilot State
   const [isAiEnabled, setIsAiEnabled] = useState<boolean>(() => localStorage.getItem('ai_enabled') === 'true');
@@ -302,6 +369,28 @@ function App() {
   const [activeSceneId, setActiveSceneId] = useState<string>(currentProject.activeSceneId);
   const activeScene = scenes.find(s => s.id === activeSceneId) || scenes[0];
   const [isPageTurning, setIsPageTurning] = useState<boolean>(false);
+
+  const [hasManuallyEditedRecordingName, setHasManuallyEditedRecordingName] = useState<boolean>(false);
+
+  useEffect(() => {
+    setHasManuallyEditedRecordingName(false);
+  }, [currentProjectId]);
+
+  useEffect(() => {
+    const activeProject = projects.find(p => p.id === currentProjectId);
+    if (activeProject && !hasManuallyEditedRecordingName) {
+      setRecordingName(activeProject.name);
+    }
+  }, [currentProjectId, projects, hasManuallyEditedRecordingName]);
+
+  const handleRecordingNameChange = (name: string) => {
+    setRecordingName(name);
+    if (name.trim() === '') {
+      setHasManuallyEditedRecordingName(false);
+    } else {
+      setHasManuallyEditedRecordingName(true);
+    }
+  };
 
   // Query Gemini for AI suggestions (Questions/Prompts)
   const queryGeminiQuestions = useCallback(async (transcript: string) => {
@@ -455,8 +544,20 @@ Return ONLY valid JSON in the format: {"drawings":[...]}`;
         }
       }
       if (finalText.trim()) {
+        const words = finalText.trim().split(/\s+/);
+        const currentTime = recordingTimeValueRef.current;
+        const newWords = words.map(word => ({ text: word, time: currentTime }));
+        const updatedWords = [...transcriptWordsRef.current, ...newWords];
+        setTranscriptWords(updatedWords);
+        transcriptWordsRef.current = updatedWords;
+        saveMetadataValue('transcriptWords', updatedWords).catch(err => console.error("Error saving progressive transcriptWords", err));
+
         speechTranscriptRef.current += finalText;
-        setTranscript(prev => prev + finalText);
+        setTranscript(prev => {
+          const nextText = prev + finalText;
+          saveMetadataValue('transcript', nextText).catch(err => console.error("Error saving progressive transcript", err));
+          return nextText;
+        });
         drawingTextBufferRef.current += finalText;
 
         // 1. Questions Track (slow): 15-second throttle using accumulated transcript
@@ -634,6 +735,18 @@ Return ONLY valid JSON in the format: {"drawings":[...]}`;
 
   // Flashlight Spotlight State
   const [flashlightActive, setFlashlightActive] = useState<boolean>(false);
+  const handleSetFlashlightActive = (val: boolean) => {
+    setFlashlightActive(val);
+    const updatedScenes = scenes.map(s => {
+      if (s.id === activeSceneId) {
+        return { ...s, flashlightActive: val };
+      }
+      return s;
+    });
+    setScenes(updatedScenes);
+    saveCurrentProjectState(updatedScenes, activeSceneId, scriptText);
+  };
+
   const [flashlightPos, setFlashlightPos] = useState({ x: 960, y: 540 });
 
   // Floating Widgets
@@ -644,8 +757,51 @@ Return ONLY valid JSON in the format: {"drawings":[...]}`;
     question: false,
   });
 
+  const [activeTab, setActiveTab] = useState<'canvas' | 'script' | 'record'>('canvas');
+  const [previewMicStream, setPreviewMicStream] = useState<MediaStream | null>(null);
+  const [activeMicStream, setActiveMicStream] = useState<MediaStream | null>(null);
+  const [activeScreenStream, setActiveScreenStream] = useState<MediaStream | null>(null);
+
+  useEffect(() => {
+    if (activeTab === 'record' && recordingStatus === 'idle' && selectedMicId) {
+      let active = true;
+      navigator.mediaDevices.getUserMedia({
+        audio: { deviceId: { exact: selectedMicId } }
+      }).then(stream => {
+        if (active) {
+          setPreviewMicStream(stream);
+        } else {
+          stream.getTracks().forEach(t => t.stop());
+        }
+      }).catch(err => {
+        console.warn("Failed to open preview mic stream", err);
+      });
+
+      return () => {
+        active = false;
+        setPreviewMicStream(prev => {
+          if (prev) {
+            prev.getTracks().forEach(t => t.stop());
+          }
+          return null;
+        });
+      };
+    } else {
+      setPreviewMicStream(prev => {
+        if (prev) {
+          prev.getTracks().forEach(t => t.stop());
+        }
+        return null;
+      });
+    }
+  }, [activeTab, selectedMicId, recordingStatus]);
+
+  const currentMicStream = recordingStatus === 'recording' ? activeMicStream : previewMicStream;
+  const micLevel = useAudioLevel(currentMicStream);
+  const screenLevel = useAudioLevel(activeScreenStream);
+
   // Sidebar collapse state — declared before calculateScale so it can be read inside it
-  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(() => window.innerWidth < 768);
 
   // Aspect ratio scaling
   const [scale, setScale] = useState<number>(1);
@@ -655,7 +811,9 @@ Return ONLY valid JSON in the format: {"drawings":[...]}`;
     const bottomH = 72;
     const availW = window.innerWidth - sidebarW;
     const availH = window.innerHeight - bottomH;
-    setScale(Math.min(availW / 1920, availH / 1080));
+    const targetW = isMobileMode ? 1080 : 1920;
+    const targetH = isMobileMode ? 1920 : 1080;
+    setScale(Math.min(availW / targetW, availH / targetH));
   };
 
   useEffect(() => {
@@ -663,10 +821,26 @@ Return ONLY valid JSON in the format: {"drawings":[...]}`;
     const onResize = () => calculateScale();
     window.addEventListener('resize', onResize);
     return () => window.removeEventListener('resize', onResize);
-  }, [isSidebarCollapsed]);
+  }, [isSidebarCollapsed, isMobileMode]);
+
+  // Sync webcam slot height to correct aspect ratio on layout switch
+  useEffect(() => {
+    setWebcamHeight(Math.round(isMobileMode ? (webcamWidth * 16 / 9) : (webcamWidth * 9 / 16)));
+  }, [isMobileMode, webcamWidth]);
 
   const toggleWidget = (widget: 'timer' | 'checklist' | 'scratchpad' | 'question') => {
-    setWidgetsVisible(prev => ({ ...prev, [widget]: !prev[widget] }));
+    setWidgetsVisible(prev => {
+      const next = { ...prev, [widget]: !prev[widget] };
+      const updatedScenes = scenes.map(s => {
+        if (s.id === activeSceneId) {
+          return { ...s, widgetsVisible: next };
+        }
+        return s;
+      });
+      setScenes(updatedScenes);
+      saveCurrentProjectState(updatedScenes, activeSceneId, scriptText);
+      return next;
+    });
   };
 
   const handleClearWhiteboard = () => {
@@ -680,6 +854,15 @@ Return ONLY valid JSON in the format: {"drawings":[...]}`;
   const recordingTimerRef = useRef<number | null>(null);
   const displayStreamRef = useRef<MediaStream | null>(null);
   const micStreamRef = useRef<MediaStream | null>(null);
+  const webcamStreamRef = useRef<MediaStream | null>(null);
+  const webcamRecorderRef = useRef<MediaRecorder | null>(null);
+  const isRollbackStoppingRef = useRef<boolean>(false);
+  const currentSegmentIdRef = useRef<string>('');
+  const previewPlayerRef = useRef<HTMLVideoElement | null>(null);
+  const chunkSequenceRef = useRef<number>(0);
+  const webcamChunkSequenceRef = useRef<number>(0);
+  const manifestRef = useRef<VideoSegment[]>([]);
+  const transcriptWordsRef = useRef<{ text: string; time: number }[]>([]);
 
   // Check for crash recovery on boot
   useEffect(() => {
@@ -688,9 +871,287 @@ Return ONLY valid JSON in the format: {"drawings":[...]}`;
     });
   }, []);
 
-  const handleStartRecording = async () => {
+  // Prevent accidental tab closures/reloads during recording
+  useEffect(() => {
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (recordingStatus === 'recording' || recordingStatus === 'paused') {
+        e.preventDefault();
+        e.returnValue = 'You have an active recording session. If you leave, you can resume or recover the session later, but it is recommended to stop and export first.';
+        return e.returnValue;
+      }
+    };
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => {
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+    };
+  }, [recordingStatus]);
+
+  const startRecordingTimer = () => {
+    setRecordingStatus('recording');
+    if (recordingTimerRef.current) {
+      clearInterval(recordingTimerRef.current);
+    }
+    recordingTimerRef.current = window.setInterval(() => {
+      setRecordingTime(t => {
+        const nextTime = t + 1;
+        
+        // Progressively update active segment duration in the manifest and save it
+        const currentManifest = [...manifestRef.current];
+        if (currentManifest.length > 0) {
+          const activeSegment = currentManifest[currentManifest.length - 1];
+          activeSegment.duration = nextTime - activeSegment.startTime;
+          setRecordingManifest(currentManifest);
+          manifestRef.current = currentManifest;
+          saveRecordingManifest(currentManifest).catch(err => console.error("Error saving progressive manifest", err));
+        }
+
+        // Save current time to IndexedDB progressively
+        saveMetadataValue('recordingTime', nextTime).catch(err => console.error("Error saving progressive time", err));
+        
+        return nextTime;
+      });
+    }, 1000);
+  };
+
+  const compileVideoFiles = async (manifest: VideoSegment[], isWebcam: boolean) => {
+    const ffmpeg = new FFmpeg();
+    ffmpeg.on('log', ({ message }) => {
+      console.log(`FFmpeg Log (${isWebcam ? 'webcam' : 'slides'}):`, message);
+      setExportProgress(`FFmpeg: ${message}`);
+    });
+
+    const baseURL = 'https://unpkg.com/@ffmpeg/core@0.12.6/dist/esm';
+    await ffmpeg.load({
+      coreURL: await toBlobURL(`${baseURL}/ffmpeg-core.js`, 'text/javascript'),
+      wasmURL: await toBlobURL(`${baseURL}/ffmpeg-core.wasm`, 'application/wasm'),
+    });
+
+    let concatScript = '';
+    const loadedFiles: string[] = [];
+    const trimmedFiles: string[] = [];
+
     try {
+      for (const [index, segment] of manifest.entries()) {
+        const segmentBlob = isWebcam
+          ? await getWebcamSegmentBlob(segment.segmentId)
+          : await getSegmentBlob(segment.segmentId);
+
+        if (!segmentBlob) {
+          console.warn(`No blob found for segment ${segment.segmentId}`);
+          continue;
+        }
+
+        console.log(`[compileVideoFiles] Segment ${index} (${segment.segmentId}) blob size: ${segmentBlob.size} bytes, type: ${segmentBlob.type}`);
+
+        const inputName = `input_${index}.webm`;
+        const trimmedName = `trimmed_${index}.webm`;
+
+        try {
+          await ffmpeg.writeFile(inputName, await fetchFile(segmentBlob));
+          loadedFiles.push(inputName);
+
+          setExportProgress(`Trimming segment ${index + 1}/${manifest.length} to ${segment.duration.toFixed(1)}s...`);
+          await ffmpeg.exec([
+            '-y',
+            '-fflags', '+genpts+discardcorrupt',
+            '-i', inputName,
+            '-t', `${segment.duration}`,
+            '-c', 'copy',
+            trimmedName
+          ]);
+          trimmedFiles.push(trimmedName);
+          concatScript += `file '${trimmedName}'\n`;
+        } catch (segmentErr) {
+          console.error(`[compileVideoFiles] Failed to process segment index ${index} (${segment.segmentId}):`, segmentErr);
+        }
+      }
+
+      if (concatScript === '') {
+        throw new Error("No segments were compiled successfully.");
+      }
+
+      await ffmpeg.writeFile('concat_list.txt', concatScript);
+      
+      setExportProgress("Concatenating all trimmed segments...");
+      await ffmpeg.exec([
+        '-y',
+        '-f', 'concat',
+        '-safe', '0',
+        '-i', 'concat_list.txt',
+        '-c', 'copy',
+        'output.webm'
+      ]);
+
+      const data = await ffmpeg.readFile('output.webm');
+      let dataPart: BlobPart;
+      if (typeof data === 'string') {
+        dataPart = data;
+      } else {
+        const bufferCopy = new ArrayBuffer(data.byteLength);
+        const view = new Uint8Array(bufferCopy);
+        view.set(data);
+        dataPart = view;
+      }
+      return new Blob([dataPart], { type: 'video/webm' });
+
+    } finally {
+      try {
+        for (const file of loadedFiles) {
+          await ffmpeg.deleteFile(file).catch(() => {});
+        }
+        for (const file of trimmedFiles) {
+          await ffmpeg.deleteFile(file).catch(() => {});
+        }
+        await ffmpeg.deleteFile('concat_list.txt').catch(() => {});
+        await ffmpeg.deleteFile('output.webm').catch(() => {});
+      } catch (err) {
+        console.warn("Cleanup virtual FS error", err);
+      }
+    }
+  };
+
+  const handleNormalStopRecording = async () => {
+    if (displayStreamRef.current) displayStreamRef.current.getTracks().forEach(t => t.stop());
+    if (micStreamRef.current) micStreamRef.current.getTracks().forEach(t => t.stop());
+    setActiveMicStream(null);
+    setActiveScreenStream(null);
+    
+    setIsExporting(true);
+    setExportProgress("Preparing video segments...");
+
+    try {
+      const name = recordingName || 'Monologue';
+      
+      const currentManifest = [...manifestRef.current];
+      if (currentManifest.length > 0) {
+        const activeSegment = currentManifest[currentManifest.length - 1];
+        activeSegment.duration = recordingTimeValueRef.current - activeSegment.startTime;
+      }
+      setRecordingManifest(currentManifest);
+      manifestRef.current = currentManifest;
+
+      await saveRecordingManifest(currentManifest);
+
+      const validManifest = currentManifest.filter(seg => seg.duration > 0);
+
+      if (validManifest.length > 0) {
+        setExportProgress("Compiling main slides using FFmpeg...");
+        const mainBlob = await compileVideoFiles(validManifest, false);
+        const url = URL.createObjectURL(mainBlob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = exportSeparately ? `${name}_slides.webm` : `${name}.webm`;
+        a.click();
+        URL.revokeObjectURL(url);
+
+        if (exportSeparately) {
+          setExportProgress("Compiling webcam feed using FFmpeg...");
+          const camBlob = await compileVideoFiles(validManifest, true);
+          const urlCam = URL.createObjectURL(camBlob);
+          const aCam = document.createElement('a');
+          aCam.href = urlCam;
+          aCam.download = `${name}_webcam.webm`;
+          aCam.click();
+          URL.revokeObjectURL(urlCam);
+        }
+      } else {
+        setExportProgress("No segments found. Exporting raw chunks...");
+        const { chunks } = await getRecordingChunks();
+        if (chunks.length > 0) {
+          const blob = new Blob(chunks, { type: chunks[0].type });
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = exportSeparately ? `${name}_slides.webm` : `${name}.webm`;
+          a.click();
+          URL.revokeObjectURL(url);
+        }
+        if (exportSeparately) {
+          const { chunks: camChunks } = await getWebcamChunks();
+          if (camChunks.length > 0) {
+            const blob = new Blob(camChunks, { type: camChunks[0].type });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `${name}_webcam.webm`;
+            a.click();
+            URL.revokeObjectURL(url);
+          }
+        }
+      }
+    } catch (err) {
+      console.error("Failed to compile recording", err);
+      alert("Failed to stitch video files using FFmpeg.wasm. Saving raw chunks fallback.");
+      try {
+        const { chunks } = await getRecordingChunks();
+        if (chunks.length > 0) {
+          const blob = new Blob(chunks, { type: chunks[0].type });
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = `${recordingName || 'Monologue'}_slides_raw.webm`;
+          a.click();
+          URL.revokeObjectURL(url);
+        }
+      } catch (e) {
+        console.error("Raw chunks download failed", e);
+      }
+    } finally {
+      cleanupPausePreview();
       await clearRecordingChunks();
+      await clearWebcamChunks();
+      setHasRecoverableVideo(false);
+      setRecordingStatus('idle');
+      setRecordingTime(0);
+      setTranscriptWords([]);
+      transcriptWordsRef.current = [];
+      setRecordingManifest([]);
+      manifestRef.current = [];
+      setIsExporting(false);
+      setExportProgress('');
+    }
+  };
+
+  const handleStartRecording = async () => {
+    if (hasRecoverableVideo) {
+      setActiveTab('record');
+      alert("You have an unsaved recording from a previous session. Please choose to 'Resume Recording', 'Stitch & Download', or 'Discard' in the Recording panel (Sidebar) before starting a new recording.");
+      return;
+    }
+    if (!navigator.mediaDevices.getDisplayMedia) {
+      alert(
+        "Notice: Mobile browser restrictions prevent direct screen capture.\n\n" +
+        "To record both slides and webcam, please toggle Fullscreen and use your phone's native screen recorder (from iOS Control Center or Android Quick Settings).\n\n" +
+        "We will start fallback camera-only recording in the background."
+      );
+    }
+    try {
+      let initialManifest: VideoSegment[] = [];
+      if (recordingTime === 0) {
+        chunkSequenceRef.current = 0;
+        webcamChunkSequenceRef.current = 0;
+        await clearRecordingChunks();
+        await clearWebcamChunks();
+        setTranscriptWords([]);
+        transcriptWordsRef.current = [];
+        
+        const startSegId = 'seg-' + Date.now();
+        currentSegmentIdRef.current = startSegId;
+        initialManifest = [{ segmentId: startSegId, startTime: 0, duration: 0 }];
+        setRecordingManifest(initialManifest);
+        manifestRef.current = initialManifest;
+        await saveRecordingManifest(initialManifest);
+      } else {
+        const newSegId = 'seg-' + Date.now();
+        currentSegmentIdRef.current = newSegId;
+        const updatedManifest = [
+          ...manifestRef.current,
+          { segmentId: newSegId, startTime: recordingTime, duration: 0 }
+        ];
+        setRecordingManifest(updatedManifest);
+        manifestRef.current = updatedManifest;
+        await saveRecordingManifest(updatedManifest);
+      }
       await saveRecordingMetadata(recordingName || 'Monologue');
 
       const { audioCtx, dest } = getAudioMixer() as { audioCtx: AudioContext; soundboardGain: any; dest: MediaStreamAudioDestinationNode };
@@ -703,43 +1164,67 @@ Return ONLY valid JSON in the format: {"drawings":[...]}`;
         audio: selectedMicId ? { deviceId: { exact: selectedMicId } } : true
       });
       micStreamRef.current = micStream;
+      setActiveMicStream(micStream);
       const micSource = audioCtx.createMediaStreamSource(micStream);
       micSource.connect(dest);
 
-      // Capture Screen (hints browser to prefer tab capture, pre-selects current tab, and hides mouse cursor)
-      const displayStream = await navigator.mediaDevices.getDisplayMedia({
-        video: {
-          width: 1920,
-          height: 1080,
-          displaySurface: "browser",
-          cursor: "never"
-        } as any,
-        audio: true,
-        preferCurrentTab: true,
-        selfBrowserSurface: "include"
-      } as any);
-      displayStreamRef.current = displayStream;
+      // Capture Screen (or Camera fallback on devices without getDisplayMedia like mobile phones)
+      let displayStream: MediaStream;
+      let videoTrack: MediaStreamTrack;
 
-      if (displayStream.getAudioTracks().length > 0) {
-        const screenAudioSource = audioCtx.createMediaStreamSource(displayStream);
-        screenAudioSource.connect(dest);
-      }
-
-      // Apply Region Capture (crop to the 1920x1080 recording canvas) if supported
-      const videoTrack = displayStream.getVideoTracks()[0] as any;
-      const CropTarget = (window as any).CropTarget;
-      const recordingCanvasEl = document.querySelector('.recording-canvas');
-
-      if (CropTarget && typeof CropTarget.fromElement === 'function' && typeof videoTrack.cropTo === 'function' && recordingCanvasEl) {
-        try {
-          const cropTarget = await CropTarget.fromElement(recordingCanvasEl);
-          await videoTrack.cropTo(cropTarget);
-          console.log("Region Capture crop applied successfully to the recording canvas.");
-        } catch (cropErr) {
-          console.warn("Region Capture crop failed, proceeding with full tab capture:", cropErr);
-        }
+      if (!navigator.mediaDevices.getDisplayMedia) {
+        displayStream = await navigator.mediaDevices.getUserMedia({
+          video: selectedCameraId ? {
+            deviceId: { exact: selectedCameraId },
+            width: isMobileMode ? { ideal: 1080 } : { ideal: 1920 },
+            height: isMobileMode ? { ideal: 1920 } : { ideal: 1080 },
+            aspectRatio: isMobileMode ? { ideal: 9/16 } : { ideal: 16/9 }
+          } : {
+            width: isMobileMode ? { ideal: 1080 } : { ideal: 1920 },
+            height: isMobileMode ? { ideal: 1920 } : { ideal: 1080 },
+            aspectRatio: isMobileMode ? { ideal: 9/16 } : { ideal: 16/9 },
+            facingMode: 'user'
+          }
+        });
+        displayStreamRef.current = displayStream;
+        setActiveScreenStream(displayStream);
+        videoTrack = displayStream.getVideoTracks()[0];
       } else {
-        console.warn("Region Capture (cropTo) is not supported in this browser, recording full tab.");
+        displayStream = await navigator.mediaDevices.getDisplayMedia({
+          video: {
+            width: isMobileMode ? 1080 : 1920,
+            height: isMobileMode ? 1920 : 1080,
+            displaySurface: "browser",
+            cursor: "never"
+          } as any,
+          audio: true,
+          preferCurrentTab: true,
+          selfBrowserSurface: "include"
+        } as any);
+        displayStreamRef.current = displayStream;
+        setActiveScreenStream(displayStream);
+
+        if (displayStream.getAudioTracks().length > 0) {
+          const screenAudioSource = audioCtx.createMediaStreamSource(displayStream);
+          screenAudioSource.connect(dest);
+        }
+
+        // Apply Region Capture (crop to the 1920x1080 or 1080x1920 recording canvas) if supported
+        videoTrack = displayStream.getVideoTracks()[0];
+        const CropTarget = (window as any).CropTarget;
+        const recordingCanvasEl = document.querySelector('.recording-canvas');
+
+        if (CropTarget && typeof CropTarget.fromElement === 'function' && typeof (videoTrack as any).cropTo === 'function' && recordingCanvasEl) {
+          try {
+            const cropTarget = await CropTarget.fromElement(recordingCanvasEl);
+            await (videoTrack as any).cropTo(cropTarget);
+            console.log("Region Capture crop applied successfully to the recording canvas.");
+          } catch (cropErr) {
+            console.warn("Region Capture crop failed, proceeding with full tab capture:", cropErr);
+          }
+        } else {
+          console.warn("Region Capture (cropTo) is not supported in this browser, recording full tab.");
+        }
       }
 
       // Mix video and audio tracks
@@ -754,42 +1239,57 @@ Return ONLY valid JSON in the format: {"drawings":[...]}`;
       if (!MediaRecorder.isTypeSupported(mimeType)) mimeType = 'video/webm;codecs=h264,opus';
       if (!MediaRecorder.isTypeSupported(mimeType)) mimeType = 'video/webm';
 
+      const activeSegId = currentSegmentIdRef.current;
       const recorder = new MediaRecorder(mixedStream, { mimeType });
       mediaRecorderRef.current = recorder;
 
       recorder.ondataavailable = async (e) => {
         if (e.data && e.data.size > 0) {
-          await saveRecordingChunk(e.data);
+          const seq = chunkSequenceRef.current++;
+          await saveRecordingChunk(activeSegId, seq, e.data);
         }
       };
 
       recorder.onstop = async () => {
-        if (displayStreamRef.current) displayStreamRef.current.getTracks().forEach(t => t.stop());
-        if (micStreamRef.current) micStreamRef.current.getTracks().forEach(t => t.stop());
-        
-        const { name, chunks } = await getRecordingChunks();
-        if (chunks.length > 0) {
-          const blob = new Blob(chunks, { type: chunks[0].type });
-          const url = URL.createObjectURL(blob);
-          const a = document.createElement('a');
-          a.href = url;
-          a.download = `${name || 'recorded_video'}.webm`;
-          a.click();
-          URL.revokeObjectURL(url);
+        if (isRollbackStoppingRef.current) {
+          return;
         }
-        await clearRecordingChunks();
-        setHasRecoverableVideo(false);
-        setRecordingStatus('idle');
-        setRecordingTime(0);
+        await handleNormalStopRecording();
       };
 
+      // Set up secondary webcam recording if exportSeparately is ON and webcamStreamRef is active
+      if (exportSeparately && webcamStreamRef.current && webcamStreamRef.current.active) {
+        const webcamTrack = webcamStreamRef.current.getVideoTracks()[0];
+        const webcamMixedStream = new MediaStream([
+          webcamTrack,
+          dest.stream.getAudioTracks()[0]
+        ]);
+        const camRecorder = new MediaRecorder(webcamMixedStream, { mimeType });
+        webcamRecorderRef.current = camRecorder;
+
+        camRecorder.ondataavailable = async (e) => {
+          if (e.data && e.data.size > 0) {
+            const seq = webcamChunkSequenceRef.current++;
+            await saveWebcamChunk(activeSegId, seq, e.data);
+          }
+        };
+
+        camRecorder.onstop = async () => {
+          if (isRollbackStoppingRef.current) return;
+        };
+
+        camRecorder.start(2000);
+      }
+
+      isRollbackStoppingRef.current = false;
       recorder.start(2000); // 2 second slices
       setRecordingStatus('recording');
-      setRecordingTime(0);
+      
+      if (recordingTime === 0) {
+        setRecordingTime(0);
+      }
 
-      recordingTimerRef.current = window.setInterval(() => {
-        setRecordingTime(t => t + 1);
-      }, 1000);
+      startRecordingTimer();
 
       displayStream.getVideoTracks()[0].onended = () => {
         handleStopRecording();
@@ -802,50 +1302,345 @@ Return ONLY valid JSON in the format: {"drawings":[...]}`;
     }
   };
 
+  const loadPausePreview = async () => {
+    try {
+      const { chunks } = await getRecordingChunks();
+      if (chunks.length > 0) {
+        const blob = new Blob(chunks, { type: chunks[0].type });
+        const url = URL.createObjectURL(blob);
+        setPreviewUrl(url);
+        setPlaybackTime(0);
+        setSelectedRollbackTime(null);
+        setIsPlayingPreview(false);
+      }
+    } catch (err) {
+      console.warn("Failed to load preview for pause state", err);
+    }
+  };
+
+  const cleanupPausePreview = () => {
+    if (previewUrl) {
+      URL.revokeObjectURL(previewUrl);
+      setPreviewUrl(null);
+    }
+    setPlaybackTime(0);
+    setSelectedRollbackTime(null);
+    setIsPlayingPreview(false);
+  };
+
+  const handleTogglePreview = () => {
+    if (!previewPlayerRef.current) return;
+    if (isPlayingPreview) {
+      previewPlayerRef.current.pause();
+      setIsPlayingPreview(false);
+    } else {
+      previewPlayerRef.current.play().catch(e => console.warn("Failed to play preview", e));
+      setIsPlayingPreview(true);
+    }
+  };
+
+  const handlePreviewSeek = (time: number) => {
+    if (!previewPlayerRef.current) return;
+    previewPlayerRef.current.currentTime = time;
+    setSelectedRollbackTime(time);
+    setPlaybackTime(time);
+  };
+
+  const handlePreviewTimeUpdate = () => {
+    if (!previewPlayerRef.current) return;
+    setPlaybackTime(previewPlayerRef.current.currentTime);
+  };
+
+  const handleConfirmRollback = async () => {
+    const rollbackTime = selectedRollbackTime !== null ? selectedRollbackTime : playbackTime;
+    if (confirm(`Are you sure you want to rollback to ${rollbackTime.toFixed(1)}s? This will permanently discard all recorded video after this time.`)) {
+      await handleRollback(rollbackTime);
+      cleanupPausePreview();
+    }
+  };
+
   const handlePauseRecording = () => {
     if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
       mediaRecorderRef.current.pause();
+      if (webcamRecorderRef.current && webcamRecorderRef.current.state === 'recording') {
+        webcamRecorderRef.current.pause();
+      }
       setRecordingStatus('paused');
       if (recordingTimerRef.current) {
         clearInterval(recordingTimerRef.current);
         recordingTimerRef.current = null;
       }
+      loadPausePreview();
     }
   };
 
-  const handleResumeRecording = () => {
+  const handleResumeRecording = async () => {
+    cleanupPausePreview();
     if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'paused') {
       mediaRecorderRef.current.resume();
-      setRecordingStatus('recording');
-      recordingTimerRef.current = window.setInterval(() => {
-        setRecordingTime(t => t + 1);
-      }, 1000);
+      if (webcamRecorderRef.current && webcamRecorderRef.current.state === 'paused') {
+        webcamRecorderRef.current.resume();
+      }
+      startRecordingTimer();
+      return;
+    }
+
+    if (displayStreamRef.current && displayStreamRef.current.active) {
+      try {
+        const newSegId = 'seg-' + Date.now();
+        currentSegmentIdRef.current = newSegId;
+        const updatedManifest = [
+          ...manifestRef.current,
+          { segmentId: newSegId, startTime: recordingTime, duration: 0 }
+        ];
+        setRecordingManifest(updatedManifest);
+        manifestRef.current = updatedManifest;
+        await saveRecordingManifest(updatedManifest);
+
+        const { audioCtx, dest } = getAudioMixer() as { audioCtx: AudioContext; soundboardGain: any; dest: MediaStreamAudioDestinationNode };
+        if (audioCtx.state === 'suspended') {
+          await audioCtx.resume();
+        }
+
+        const videoTrack = displayStreamRef.current.getVideoTracks()[0];
+        const mixedStream = new MediaStream([
+          videoTrack,
+          dest.stream.getAudioTracks()[0]
+        ]);
+
+        let mimeType = 'video/webm;codecs=vp9,opus';
+        if (!MediaRecorder.isTypeSupported(mimeType)) mimeType = 'video/webm;codecs=vp8,opus';
+        if (!MediaRecorder.isTypeSupported(mimeType)) mimeType = 'video/webm;codecs=h264,opus';
+        if (!MediaRecorder.isTypeSupported(mimeType)) mimeType = 'video/webm';
+
+        const activeSegId = currentSegmentIdRef.current;
+        const recorder = new MediaRecorder(mixedStream, { mimeType });
+        mediaRecorderRef.current = recorder;
+
+        recorder.ondataavailable = async (e) => {
+          if (e.data && e.data.size > 0) {
+            const seq = chunkSequenceRef.current++;
+            await saveRecordingChunk(activeSegId, seq, e.data);
+          }
+        };
+
+        recorder.onstop = async () => {
+          if (isRollbackStoppingRef.current) return;
+          await handleNormalStopRecording();
+        };
+
+        if (exportSeparately && webcamStreamRef.current && webcamStreamRef.current.active) {
+          const webcamTrack = webcamStreamRef.current.getVideoTracks()[0];
+          const webcamMixedStream = new MediaStream([
+            webcamTrack,
+            dest.stream.getAudioTracks()[0]
+          ]);
+          const camRecorder = new MediaRecorder(webcamMixedStream, { mimeType });
+          webcamRecorderRef.current = camRecorder;
+
+          camRecorder.ondataavailable = async (e) => {
+            if (e.data && e.data.size > 0) {
+              const seq = webcamChunkSequenceRef.current++;
+              await saveWebcamChunk(activeSegId, seq, e.data);
+            }
+          };
+
+          camRecorder.onstop = async () => {
+            if (isRollbackStoppingRef.current) return;
+          };
+
+          camRecorder.start(2000);
+        }
+
+        isRollbackStoppingRef.current = false;
+        recorder.start(2000);
+        startRecordingTimer();
+
+      } catch (err) {
+        console.error("Failed to resume recording from rollback", err);
+        handleStartRecording();
+      }
+    } else {
+      handleStartRecording();
     }
   };
 
   const handleStopRecording = () => {
-    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
-      mediaRecorderRef.current.stop();
+    isRollbackStoppingRef.current = false;
+    
+    const hasActiveRecorder = (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') ||
+                              (webcamRecorderRef.current && webcamRecorderRef.current.state !== 'inactive');
+                              
+    if (hasActiveRecorder) {
+      if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+        mediaRecorderRef.current.stop();
+      }
+      if (webcamRecorderRef.current && webcamRecorderRef.current.state !== 'inactive') {
+        webcamRecorderRef.current.stop();
+      }
+    } else {
+      handleNormalStopRecording();
     }
+    
     if (recordingTimerRef.current) {
       clearInterval(recordingTimerRef.current);
       recordingTimerRef.current = null;
     }
   };
 
-  const handleRecoverVideo = async () => {
-    const { name, chunks } = await getRecordingChunks();
-    if (chunks.length > 0) {
-      const blob = new Blob(chunks, { type: chunks[0].type });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `${name || 'recovered_video'}.webm`;
-      a.click();
-      URL.revokeObjectURL(url);
+  const handleRollback = async (time: number) => {
+    isRollbackStoppingRef.current = true;
+    
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+      mediaRecorderRef.current.stop();
     }
-    await clearRecordingChunks();
-    setHasRecoverableVideo(false);
+    if (webcamRecorderRef.current && webcamRecorderRef.current.state !== 'inactive') {
+      webcamRecorderRef.current.stop();
+    }
+    
+    if (recordingTimerRef.current) {
+      clearInterval(recordingTimerRef.current);
+      recordingTimerRef.current = null;
+    }
+    
+    const updatedManifest = manifestRef.current.filter(seg => seg.startTime < time);
+    if (updatedManifest.length > 0) {
+      const activeSegment = updatedManifest[updatedManifest.length - 1];
+      activeSegment.duration = time - activeSegment.startTime;
+    }
+    
+    setRecordingManifest(updatedManifest);
+    manifestRef.current = updatedManifest;
+
+    const validIds = updatedManifest.map(seg => seg.segmentId);
+    await cleanUnusedSegments(validIds);
+    await saveRecordingManifest(updatedManifest);
+    
+    const filtered = transcriptWordsRef.current.filter(w => w.time <= time);
+    setTranscriptWords(filtered);
+    transcriptWordsRef.current = filtered;
+    const reconstructedText = filtered.map(w => w.text).join(' ') + (filtered.length > 0 ? ' ' : '');
+    setTranscript(reconstructedText);
+    speechTranscriptRef.current = reconstructedText;
+    
+    setRecordingTime(time);
+    setRecordingStatus('paused');
+  };
+
+  const handleRecoverVideo = async () => {
+    const name = recordingName || 'recovered_video';
+    setIsExporting(true);
+    setExportProgress("Checking database for saved segments...");
+    let success = false;
+    try {
+      const manifest = await getRecordingManifest();
+      const validManifest = manifest.filter(seg => seg.duration > 0);
+
+      if (validManifest.length > 0) {
+        setExportProgress("Compiling main slides using FFmpeg...");
+        const mainBlob = await compileVideoFiles(validManifest, false);
+        const url = URL.createObjectURL(mainBlob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = exportSeparately ? `${name}_slides.webm` : `${name}.webm`;
+        a.click();
+        URL.revokeObjectURL(url);
+
+        if (exportSeparately) {
+          setExportProgress("Compiling webcam feed using FFmpeg...");
+          const camBlob = await compileVideoFiles(validManifest, true);
+          const urlCam = URL.createObjectURL(camBlob);
+          const aCam = document.createElement('a');
+          aCam.href = urlCam;
+          aCam.download = `${name}_webcam.webm`;
+          aCam.click();
+          URL.revokeObjectURL(urlCam);
+        }
+        success = true;
+      } else {
+        setExportProgress("No segment manifest found. Exporting raw chunks fallback...");
+        const { chunks } = await getRecordingChunks();
+        if (chunks.length > 0) {
+          const blob = new Blob(chunks, { type: chunks[0].type });
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = exportSeparately ? `${name}_slides.webm` : `${name}.webm`;
+          a.click();
+          URL.revokeObjectURL(url);
+          success = true;
+        }
+        if (exportSeparately) {
+          const { chunks: camChunks } = await getWebcamChunks();
+          if (camChunks.length > 0) {
+            const blob = new Blob(camChunks, { type: camChunks[0].type });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `${name}_webcam.webm`;
+            a.click();
+            URL.revokeObjectURL(url);
+          }
+        }
+      }
+    } catch (err) {
+      console.error("Failed to recover recording", err);
+      alert("Failed to compile or recover recording using FFmpeg.wasm. Your recording data remains intact in the browser.");
+    } finally {
+      cleanupPausePreview();
+      if (success) {
+        await clearRecordingChunks();
+        await clearWebcamChunks();
+        setHasRecoverableVideo(false);
+      }
+      setIsExporting(false);
+      setExportProgress('');
+    }
+  };
+
+  const handleResumeRecoveredSession = async () => {
+    try {
+      const manifest = await getRecordingManifest();
+      const metadataName = await getMetadataValue('videoName') || 'recovered_video';
+      const savedTime = await getMetadataValue('recordingTime') || 0;
+      const savedTranscriptWords = await getMetadataValue('transcriptWords') || [];
+      const savedTranscript = await getMetadataValue('transcript') || '';
+
+      // Populate states
+      setRecordingTime(savedTime);
+      setRecordingName(metadataName);
+      setRecordingManifest(manifest);
+      manifestRef.current = manifest;
+
+      setTranscriptWords(savedTranscriptWords);
+      transcriptWordsRef.current = savedTranscriptWords;
+
+      setTranscript(savedTranscript);
+      speechTranscriptRef.current = savedTranscript;
+
+      setRecordingStatus('paused'); // Switch to paused state
+      setHasRecoverableVideo(false); // No longer in unrecovered state
+
+      alert("Unsaved recording session successfully loaded! Share your screen/microphone again when you're ready to resume recording.");
+    } catch (err) {
+      console.error("Failed to restore session", err);
+      alert("Failed to restore recording session.");
+    }
+  };
+
+  const handleDiscardRecoveredSession = async () => {
+    if (confirm("Are you sure you want to permanently discard the unsaved recording? This cannot be undone.")) {
+      await clearRecordingChunks();
+      await clearWebcamChunks();
+      setHasRecoverableVideo(false);
+      setRecordingTime(0);
+      setTranscriptWords([]);
+      transcriptWordsRef.current = [];
+      setRecordingManifest([]);
+      manifestRef.current = [];
+      setTranscript('');
+      speechTranscriptRef.current = '';
+    }
   };
 
   // Scene manager loading & saving handlers
@@ -930,6 +1725,30 @@ Return ONLY valid JSON in the format: {"drawings":[...]}`;
     saveCurrentProjectState(updated, activeSceneId, scriptText);
   };
 
+  const handleDeleteScene = (sceneId: string) => {
+    if (scenes.length <= 1) {
+      alert("You must have at least one scene layout.");
+      return;
+    }
+    const updated = scenes.filter(s => s.id !== sceneId);
+    setScenes(updated);
+    
+    let nextActiveId = activeSceneId;
+    if (activeSceneId === sceneId) {
+      nextActiveId = updated[0].id;
+      setActiveSceneId(nextActiveId);
+      const scene = updated[0];
+      setViewMode(scene.viewMode);
+      setDiagramType(scene.diagramType);
+      setWhiteboardActive(scene.whiteboardActive);
+      setWhiteboardOnTop(scene.whiteboardOnTop);
+      setFlashlightActive(scene.flashlightActive);
+      setWidgetsVisible(scene.widgetsVisible);
+    }
+    
+    saveCurrentProjectState(updated, nextActiveId, scriptText);
+  };
+
   const handleSaveCurrentScene = (name: string) => {
     const canvasStates: { [key: string]: string } = {};
     const views: ViewMode[] = ['whiteboard', 'media', 'corkboard', 'bullet-journal', 'hero-journey', 'word-cloud'];
@@ -982,24 +1801,43 @@ Return ONLY valid JSON in the format: {"drawings":[...]}`;
 
   const handleSetViewMode = (mode: ViewMode) => {
     setViewMode(mode);
+    let nextWhiteboardActive = false;
+    let nextWhiteboardOnTop = false;
     if (mode === 'whiteboard') {
-      setWhiteboardActive(true);
-      setWhiteboardOnTop(false);
-    } else if (mode === 'bullet-journal') {
-      // Bullet journal works great with draw-on-top
-      setWhiteboardActive(false);
-      setWhiteboardOnTop(false);
-    } else {
-      setWhiteboardActive(false);
-      setWhiteboardOnTop(false);
+      nextWhiteboardActive = true;
     }
+    setWhiteboardActive(nextWhiteboardActive);
+    setWhiteboardOnTop(nextWhiteboardOnTop);
     setFlashlightActive(false);
+
+    const updatedScenes = scenes.map(s => {
+      if (s.id === activeSceneId) {
+        return {
+          ...s,
+          viewMode: mode,
+          whiteboardActive: nextWhiteboardActive,
+          whiteboardOnTop: nextWhiteboardOnTop,
+          flashlightActive: false
+        };
+      }
+      return s;
+    });
+    setScenes(updatedScenes);
+    saveCurrentProjectState(updatedScenes, activeSceneId, scriptText);
   };
 
   const handleToggleDrawOnDiagram = () => {
     const next = !whiteboardActive;
     setWhiteboardActive(next);
     setWhiteboardOnTop(next);
+    const updatedScenes = scenes.map(s => {
+      if (s.id === activeSceneId) {
+        return { ...s, whiteboardActive: next, whiteboardOnTop: next };
+      }
+      return s;
+    });
+    setScenes(updatedScenes);
+    saveCurrentProjectState(updatedScenes, activeSceneId, scriptText);
   };
 
   const handleScriptTextChange = (text: string) => {
@@ -1131,13 +1969,23 @@ Return ONLY valid JSON in the format: {"drawings":[...]}`;
         onToggleDrawOnDiagram={handleToggleDrawOnDiagram}
         triggerClearWhiteboard={handleClearWhiteboard}
         flashlightActive={flashlightActive}
-        setFlashlightActive={setFlashlightActive}
+        setFlashlightActive={handleSetFlashlightActive}
         webcamVisible={webcamVisible}
         setWebcamVisible={setWebcamVisible}
         webcamPosition={webcamPosition}
-        setWebcamPosition={setWebcamPosition}
+        setWebcamPosition={(pos) => {
+          setWebcamPosition(pos);
+          if (pos !== 'custom') {
+            setWebcamX(null);
+            setWebcamY(null);
+          }
+        }}
         webcamStyle={webcamStyle}
         setWebcamStyle={setWebcamStyle}
+        webcamShape={webcamShape}
+        setWebcamShape={setWebcamShape}
+        webcamAutoFraming={webcamAutoFraming}
+        setWebcamAutoFraming={setWebcamAutoFraming}
         webcamWidth={webcamWidth}
         setWebcamWidth={setWebcamWidth}
         webcamHeight={webcamHeight}
@@ -1146,6 +1994,11 @@ Return ONLY valid JSON in the format: {"drawings":[...]}`;
         toggleWidget={toggleWidget}
         isCollapsed={isSidebarCollapsed}
         setIsCollapsed={setIsSidebarCollapsed}
+        activeTab={activeTab}
+        setActiveTab={setActiveTab}
+        micLevel={micLevel}
+        screenLevel={screenLevel}
+        onDeleteScene={handleDeleteScene}
         scriptText={scriptText}
         setScriptText={handleScriptTextChange}
         isAiEnabled={isAiEnabled}
@@ -1169,7 +2022,7 @@ Return ONLY valid JSON in the format: {"drawings":[...]}`;
         onUpdateSceneCustomData={updateSceneCustomData}
         recordingStatus={recordingStatus}
         recordingName={recordingName}
-        setRecordingName={setRecordingName}
+        setRecordingName={handleRecordingNameChange}
         selectedMicId={selectedMicId}
         setSelectedMicId={setSelectedMicId}
         selectedCameraId={selectedCameraId}
@@ -1181,6 +2034,14 @@ Return ONLY valid JSON in the format: {"drawings":[...]}`;
         recordingTime={recordingTime}
         hasRecoverableVideo={hasRecoverableVideo}
         onRecoverVideo={handleRecoverVideo}
+        onResumeSession={handleResumeRecoveredSession}
+        onDiscardSession={handleDiscardRecoveredSession}
+        isMobileMode={isMobileMode}
+        setIsMobileMode={setIsMobileMode}
+        exportSeparately={exportSeparately}
+        setExportSeparately={setExportSeparately}
+        transcriptWords={transcriptWords}
+        onRollback={handleRollback}
       />
 
       {/* Hidden file input for import button */}
@@ -1203,9 +2064,13 @@ Return ONLY valid JSON in the format: {"drawings":[...]}`;
         <div className="canvas-area">
           <div
             className="scale-wrapper"
-            style={{ transform: `scale(${scale})` }}
+            style={{
+              transform: `scale(${scale})`,
+              width: isMobileMode ? '1080px' : '1920px',
+              height: isMobileMode ? '1920px' : '1080px',
+            }}
           >
-            {/* ---- THE 1920×1080 RECORDING CANVAS ---- */}
+            {/* ---- THE RECORDING CANVAS (1920x1080 or 1080x1920) ---- */}
             <div
               className={`recording-canvas theme-${theme}`}
               style={isImmersiveMode ? {} : getCanvasBgStyle()}
@@ -1368,21 +2233,38 @@ Return ONLY valid JSON in the format: {"drawings":[...]}`;
                 <WebcamSlot
                   position={webcamPosition}
                   styleMode={webcamStyle}
+                  shape={webcamShape}
                   width={webcamWidth}
                   height={webcamHeight}
                   theme={theme}
                   selectedCameraId={selectedCameraId}
+                  isMobileMode={isMobileMode}
+                  x={webcamX}
+                  y={webcamY}
+                  scale={scale}
+                  onPositionChange={(newX, newY) => {
+                    setWebcamX(newX);
+                    setWebcamY(newY);
+                    setWebcamPosition('custom');
+                  }}
+                  onSizeChange={(newWidth) => {
+                    setWebcamWidth(newWidth);
+                  }}
+                  autoFraming={webcamAutoFraming}
+                  onStreamCreated={(s) => {
+                    webcamStreamRef.current = s;
+                  }}
                 />
               )}
 
               {/* Draggable Widgets */}
               {widgetsVisible.timer && (
-                <DraggableWidget title="timer" defaultX={1480} defaultY={80} scale={scale} theme={theme} onClose={() => toggleWidget('timer')}>
+                <DraggableWidget title="timer" defaultX={isMobileMode ? 40 : 1480} defaultY={isMobileMode ? 40 : 80} scale={scale} theme={theme} onClose={() => toggleWidget('timer')}>
                   <TimerWidget theme={theme} />
                 </DraggableWidget>
               )}
               {widgetsVisible.checklist && (
-                <DraggableWidget title="agenda outline" defaultX={1200} defaultY={280} scale={scale} theme={theme} width={800} onClose={() => toggleWidget('checklist')}>
+                <DraggableWidget title="agenda outline" defaultX={isMobileMode ? 40 : 1200} defaultY={isMobileMode ? 450 : 280} scale={scale} theme={theme} width={isMobileMode ? 1000 : 800} onClose={() => toggleWidget('checklist')}>
                   <ChecklistWidget
                     items={activeScene?.checklistItems !== undefined ? activeScene.checklistItems : defaultChecklistItems}
                     onChange={(newItems) => updateSceneCustomData(activeSceneId, 'checklistItems', newItems)}
@@ -1390,7 +2272,7 @@ Return ONLY valid JSON in the format: {"drawings":[...]}`;
                 </DraggableWidget>
               )}
               {widgetsVisible.scratchpad && (
-                <DraggableWidget title="monologue scratches" defaultX={1480} defaultY={530} scale={scale} theme={theme} onClose={() => toggleWidget('scratchpad')}>
+                <DraggableWidget title="monologue scratches" defaultX={isMobileMode ? 40 : 1480} defaultY={isMobileMode ? 1150 : 530} scale={scale} theme={theme} width={isMobileMode ? 1000 : 400} onClose={() => toggleWidget('scratchpad')}>
                   <ScratchpadWidget
                     text={activeScene?.scratchpadText !== undefined ? activeScene.scratchpadText : defaultScratchpadText}
                     onChange={(newText) => updateSceneCustomData(activeSceneId, 'scratchpadText', newText)}
@@ -1398,7 +2280,7 @@ Return ONLY valid JSON in the format: {"drawings":[...]}`;
                 </DraggableWidget>
               )}
               {widgetsVisible.question && (
-                <DraggableWidget title="reflection prompt" defaultX={80} defaultY={80} scale={scale} theme={theme} width={1000} onClose={() => toggleWidget('question')}>
+                <DraggableWidget title="reflection prompt" defaultX={isMobileMode ? 40 : 80} defaultY={isMobileMode ? 160 : 80} scale={scale} theme={theme} width={isMobileMode ? 1000 : 1000} onClose={() => toggleWidget('question')}>
                   <QuestionPromptWidget
                     question={activeScene?.questionText !== undefined ? activeScene.questionText : defaultQuestionText}
                     onChange={(newText) => updateSceneCustomData(activeSceneId, 'questionText', newText)}
@@ -1414,9 +2296,143 @@ Return ONLY valid JSON in the format: {"drawings":[...]}`;
           </div>
         </div>
 
-        {/* ======================================================
-            BOTTOM TOOLBAR — outside recording canvas
-        ====================================================== */}
+        {/* Playback Seeker / Rollback Timeline Overlay */}
+        {recordingStatus === 'paused' && previewUrl && (
+          <div style={{
+            position: 'fixed',
+            bottom: '76px',
+            left: '50%',
+            transform: 'translateX(-50%)',
+            width: '90%',
+            maxWidth: '1000px',
+            backgroundColor: 'rgba(30, 21, 16, 0.94)',
+            backdropFilter: 'blur(10px)',
+            border: '1px solid rgba(244, 234, 213, 0.15)',
+            borderRadius: '16px',
+            padding: '16px 20px',
+            boxShadow: '0 10px 30px rgba(0,0,0,0.5)',
+            zIndex: 850,
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '12px',
+            fontFamily: 'Inter, sans-serif',
+            color: '#F4EAD5',
+            boxSizing: 'border-box'
+          }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                <button
+                  onClick={handleTogglePreview}
+                  style={{
+                    background: isPlayingPreview ? 'rgba(232, 176, 154, 0.2)' : 'var(--terracotta)',
+                    border: 'none',
+                    color: '#F4EAD5',
+                    padding: '6px 12px',
+                    borderRadius: '6px',
+                    fontSize: '12px',
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px'
+                  }}
+                >
+                  {isPlayingPreview ? '⏸ Pause Preview' : '▶ Play Preview'}
+                </button>
+                
+                <span style={{ fontSize: '13px', fontFamily: 'monospace', color: 'var(--warm-gold)' }}>
+                  {(() => {
+                    const format = (t: number) => {
+                      const mins = Math.floor(t / 60);
+                      const secs = Math.floor(t % 60);
+                      const ms = Math.floor((t % 1) * 10);
+                      return `${mins}:${secs.toString().padStart(2, '0')}.${ms}`;
+                    };
+                    const cur = selectedRollbackTime !== null ? selectedRollbackTime : playbackTime;
+                    return `${format(cur)} / ${format(recordingTime)}`;
+                  })()}
+                </span>
+              </div>
+
+              <div style={{ display: 'flex', gap: '8px' }}>
+                <button
+                  onClick={handleConfirmRollback}
+                  style={{
+                    background: 'var(--terracotta)',
+                    border: 'none',
+                    color: '#F4EAD5',
+                    padding: '6px 14px',
+                    borderRadius: '6px',
+                    fontSize: '12px',
+                    fontWeight: 700,
+                    cursor: 'pointer',
+                    boxShadow: '0 2px 8px rgba(184, 103, 74, 0.3)'
+                  }}
+                >
+                  ↩ Rollback & Overwrite From Here
+                </button>
+                <button
+                  onClick={cleanupPausePreview}
+                  style={{
+                    background: 'rgba(244, 234, 213, 0.1)',
+                    border: '1px solid rgba(244, 234, 213, 0.2)',
+                    color: '#F4EAD5',
+                    padding: '6px 12px',
+                    borderRadius: '6px',
+                    fontSize: '12px',
+                    fontWeight: 600,
+                    cursor: 'pointer'
+                  }}
+                >
+                  Cancel Seeker
+                </button>
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', alignItems: 'center', width: '100%', gap: '10px' }}>
+              <input
+                type="range"
+                min={0}
+                max={recordingTime}
+                step={0.1}
+                value={selectedRollbackTime !== null ? selectedRollbackTime : playbackTime}
+                onChange={(e) => handlePreviewSeek(parseFloat(e.target.value))}
+                style={{
+                  flex: 1,
+                  accentColor: 'var(--terracotta)',
+                  background: 'rgba(244, 234, 213, 0.1)',
+                  height: '6px',
+                  borderRadius: '3px',
+                  cursor: 'pointer'
+                }}
+              />
+            </div>
+
+            <div style={{ 
+              display: 'flex', 
+              justifyContent: 'center', 
+              background: '#0c0705', 
+              borderRadius: '8px', 
+              padding: '6px',
+              border: '1px solid rgba(244,234,213,0.06)'
+            }}>
+              <video
+                ref={previewPlayerRef}
+                src={previewUrl}
+                onTimeUpdate={handlePreviewTimeUpdate}
+                onEnded={() => setIsPlayingPreview(false)}
+                style={{
+                  height: '140px',
+                  borderRadius: '6px',
+                  aspectRatio: isMobileMode ? '9/16' : '16/9',
+                  backgroundColor: '#000',
+                  boxShadow: '0 4px 10px rgba(0,0,0,0.5)'
+                }}
+              />
+            </div>
+          </div>
+        )}
+
         <BottomToolbar
           viewMode={viewMode}
           setViewMode={handleSetViewMode}
@@ -1424,7 +2440,7 @@ Return ONLY valid JSON in the format: {"drawings":[...]}`;
           whiteboardOnTop={whiteboardOnTop}
           onToggleDrawOnDiagram={handleToggleDrawOnDiagram}
           flashlightActive={flashlightActive}
-          setFlashlightActive={setFlashlightActive}
+          setFlashlightActive={handleSetFlashlightActive}
           strokeColor={strokeColor}
           setStrokeColor={setStrokeColor}
           brushType={brushType}
@@ -1440,8 +2456,153 @@ Return ONLY valid JSON in the format: {"drawings":[...]}`;
           onPauseRecording={handlePauseRecording}
           onResumeRecording={handleResumeRecording}
           onStopRecording={handleStopRecording}
+          isMobileMode={isMobileMode}
+          setIsMobileMode={setIsMobileMode}
         />
       </div>
+
+      {/* Floating Mobile Record Bar */}
+      {isMobileMode && (
+        <div style={{
+          position: 'fixed',
+          top: '16px',
+          right: '16px',
+          zIndex: 900,
+          display: 'flex',
+          alignItems: 'center',
+          gap: '8px',
+          background: 'rgba(30, 21, 16, 0.95)',
+          border: '1px solid rgba(244, 234, 213, 0.15)',
+          padding: '6px 12px',
+          borderRadius: '20px',
+          boxShadow: '0 4px 15px rgba(0,0,0,0.4)',
+          fontFamily: 'Inter, sans-serif',
+          backdropFilter: 'blur(10px)',
+        }}>
+          <span style={{
+            width: '8px',
+            height: '8px',
+            borderRadius: '50%',
+            backgroundColor: recordingStatus === 'recording' ? 'var(--terracotta)' : recordingStatus === 'paused' ? 'var(--warm-gold)' : 'rgba(244,234,213,0.2)',
+            animation: recordingStatus === 'recording' ? 'pulse 1.5s infinite' : 'none'
+          }} />
+          <span style={{ color: '#F4EAD5', fontSize: '12px', fontFamily: 'Lora, serif', marginRight: '6px' }}>
+            {(() => {
+              const mins = Math.floor(recordingTime / 60);
+              const secs = recordingTime % 60;
+              return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+            })()}
+          </span>
+          {recordingStatus === 'idle' ? (
+            <button
+              onClick={handleStartRecording}
+              style={{
+                background: 'var(--terracotta)',
+                border: 'none',
+                color: '#F4EAD5',
+                padding: '4px 10px',
+                borderRadius: '12px',
+                fontSize: '11px',
+                fontWeight: 600,
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '4px'
+              }}
+            >
+              Rec
+            </button>
+          ) : (
+            <div style={{ display: 'flex', gap: '4px' }}>
+              {recordingStatus === 'recording' ? (
+                <button onClick={handlePauseRecording} style={{ background: 'rgba(244,234,213,0.1)', border: '1px solid rgba(244,234,213,0.2)', color: '#F4EAD5', padding: '4px 8px', borderRadius: '12px', fontSize: '11px', fontWeight: 600, cursor: 'pointer' }}>
+                  Pause
+                </button>
+              ) : (
+                <button onClick={handleResumeRecording} style={{ background: 'var(--terracotta)', border: 'none', color: '#F4EAD5', padding: '4px 8px', borderRadius: '12px', fontSize: '11px', fontWeight: 600, cursor: 'pointer' }}>
+                  Resume
+                </button>
+              )}
+              <button onClick={handleStopRecording} style={{ background: 'rgba(232,176,154,0.15)', border: '1px solid rgba(232,176,154,0.3)', color: '#E8B09A', padding: '4px 8px', borderRadius: '12px', fontSize: '11px', fontWeight: 600, cursor: 'pointer' }}>
+                Stop
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+
+      {isExporting && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: 'rgba(9, 9, 11, 0.9)',
+          backdropFilter: 'blur(12px)',
+          zIndex: 99999,
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          justifyContent: 'center',
+          color: '#f4ead5',
+          fontFamily: 'Inter, sans-serif',
+          padding: '24px',
+          textAlign: 'center'
+        }}>
+          <style>{`
+            @keyframes compile-spin {
+              0% { transform: rotate(0deg); }
+              100% { transform: rotate(360deg); }
+            }
+          `}</style>
+          <div style={{
+            width: '48px',
+            height: '48px',
+            border: '4px solid rgba(232, 176, 154, 0.2)',
+            borderTopColor: 'var(--terracotta)',
+            borderRadius: '50%',
+            animation: 'compile-spin 1s linear infinite',
+            marginBottom: '24px'
+          }} />
+          <h2 style={{
+            fontSize: '24px',
+            fontWeight: 700,
+            fontFamily: 'Lora, serif',
+            color: '#F4EAD5',
+            margin: '0 0 8px 0',
+            letterSpacing: '-0.02em'
+          }}>
+            Compiling Video
+          </h2>
+          <p style={{
+            color: 'rgba(244, 234, 213, 0.7)',
+            fontSize: '14px',
+            maxWidth: '400px',
+            margin: '0 0 24px 0',
+            lineHeight: 1.5
+          }}>
+            Stitching and remuxing segments using client-side FFmpeg.wasm. This process runs entirely in your browser and ensures zero frame corruption.
+          </p>
+          <div style={{
+            padding: '12px 20px',
+            background: 'rgba(0, 0, 0, 0.3)',
+            border: '1px solid rgba(244, 234, 213, 0.1)',
+            borderRadius: '12px',
+            fontSize: '12px',
+            fontFamily: 'monospace',
+            color: 'var(--warm-gold)',
+            maxWidth: '500px',
+            width: '100%',
+            boxSizing: 'border-box',
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+            whiteSpace: 'nowrap'
+          }}>
+            {exportProgress || "Initializing WebAssembly compiler..."}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

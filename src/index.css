@@ -476,3 +476,42 @@ h1, h2, h3, h4, h5, h6 {
     left: -150%;
   }
 }
+
+/* =====================================================================
+   RESPONSIVE MOBILE VIEWPORT OVERRIDES
+   ===================================================================== */
+@media (max-width: 768px) {
+  .app-shell {
+    position: relative;
+  }
+
+  /* Make sidebar float as overlay rather than pushing canvas */
+  .sidebar-panel {
+    position: absolute;
+    top: 0;
+    left: 0;
+    bottom: 0;
+    height: 100vh;
+    z-index: 1000;
+    box-shadow: 8px 0 24px rgba(0, 0, 0, 0.45);
+    background-color: #1e1510;
+  }
+
+  /* Allow bottom toolbar elements to scroll horizontally on small widths */
+  .bottom-toolbar {
+    padding: 0 12px;
+    gap: 8px;
+    overflow-x: auto;
+    justify-content: flex-start !important;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .bottom-toolbar::-webkit-scrollbar {
+    display: none; /* Hide scrollbar scroll track for cleaner aesthetic */
+  }
+
+  /* Make sure items don't shrink inside horizontal scrolling toolbar */
+  .bottom-toolbar > * {
+    flex-shrink: 0;
+  }
+}

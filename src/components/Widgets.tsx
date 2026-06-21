@@ -26,6 +26,10 @@ export const DraggableWidget: React.FC<DragProps> = ({
   const [isDragging, setIsDragging] = useState(false);
   const dragStart = useRef({ mouseX: 0, mouseY: 0, widgetX: 0, widgetY: 0 });
 
+  useEffect(() => {
+    setPos({ x: defaultX, y: defaultY });
+  }, [defaultX, defaultY]);
+
   const handleMouseDown = (e: React.MouseEvent) => {
     // Only drag from the header grip or header bar
     const target = e.target as HTMLElement;

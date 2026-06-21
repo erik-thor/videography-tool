@@ -21,8 +21,10 @@ import {
   Brain,
   Download,
   Upload,
+  Smartphone,
+  Monitor,
 } from 'lucide-react';
-import type { WebcamPosition, WebcamStyle } from './WebcamSlot';
+import type { WebcamPosition, WebcamStyle, WebcamShape } from './WebcamSlot';
 import type { ViewMode, Scene, Project } from '../App';
 import { Soundboard } from './Soundboard';
 
@@ -48,6 +50,10 @@ interface SidebarControlsProps {
   setWebcamPosition: (p: WebcamPosition) => void;
   webcamStyle: WebcamStyle;
   setWebcamStyle: (s: WebcamStyle) => void;
+  webcamShape: WebcamShape;
+  setWebcamShape: (s: WebcamShape) => void;
+  webcamAutoFraming: boolean;
+  setWebcamAutoFraming: (v: boolean) => void;
   webcamWidth: number;
   setWebcamWidth: (w: number) => void;
   webcamHeight: number;
@@ -107,6 +113,19 @@ interface SidebarControlsProps {
   recordingTime: number;
   hasRecoverableVideo: boolean;
   onRecoverVideo: () => void;
+  onResumeSession: () => void;
+  onDiscardSession: () => void;
+  isMobileMode: boolean;
+  setIsMobileMode: (v: boolean) => void;
+  activeTab: 'canvas' | 'script' | 'record';
+  setActiveTab: (tab: 'canvas' | 'script' | 'record') => void;
+  micLevel: number;
+  screenLevel: number;
+  onDeleteScene: (id: string) => void;
+  exportSeparately: boolean;
+  setExportSeparately: (v: boolean) => void;
+  transcriptWords: { text: string; time: number }[];
+  onRollback: (time: number) => void;
 }
 
 const gradientsList = [
@@ -155,16 +174,82 @@ interface ScriptTabProps {
   setScript: (s: string) => void;
   aiSuggestions: string[];
   isAiEnabled: boolean;
+  transcriptWords: { text: string; time: number }[];
+  onRollback: (time: number) => void;
+  recordingStatus: 'idle' | 'recording' | 'paused';
+  recordingTime: number;
 }
 
-const ScriptTab: React.FC<ScriptTabProps> = ({ fontSize, setFontSize, script, setScript, aiSuggestions, isAiEnabled }) => {
+const ScriptTab: React.FC<ScriptTabProps> = ({
+  fontSize,
+  setFontSize,
+  script,
+  setScript,
+  aiSuggestions,
+  isAiEnabled,
+  transcriptWords,
+  onRollback,
+  recordingStatus,
+  recordingTime
+}) => {
+  const [scriptMode, setScriptMode] = useState<'edit' | 'teleprompter'>('edit');
+  const [customRollbackSecs, setCustomRollbackSecs] = useState<number>(10);
+
+  const formatDuration = (totalSeconds: number) => {
+    const mins = Math.floor(totalSeconds / 60);
+    const secs = totalSeconds % 60;
+    return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+  };
+
   return (
     <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', padding: '14px', gap: '16px' }}>
       
+      {/* Mode Selector Toggle */}
+      <div style={{ display: 'flex', gap: '6px', flexShrink: 0 }}>
+        <button
+          onClick={() => setScriptMode('edit')}
+          style={{
+            flex: 1,
+            padding: '6px 8px',
+            fontSize: '11.5px',
+            fontFamily: 'Inter, sans-serif',
+            fontWeight: 600,
+            background: scriptMode === 'edit' ? 'rgba(184,103,74,0.25)' : 'rgba(244,234,213,0.06)',
+            border: scriptMode === 'edit' ? '1px solid rgba(184,103,74,0.4)' : '1px solid rgba(244,234,213,0.12)',
+            borderRadius: '6px',
+            color: scriptMode === 'edit' ? '#E8B09A' : 'rgba(244,234,213,0.6)',
+            cursor: 'pointer',
+            transition: 'all 0.2s'
+          }}
+        >
+          ✏️ Edit Script
+        </button>
+        <button
+          onClick={() => setScriptMode('teleprompter')}
+          style={{
+            flex: 1,
+            padding: '6px 8px',
+            fontSize: '11.5px',
+            fontFamily: 'Inter, sans-serif',
+            fontWeight: 600,
+            background: scriptMode === 'teleprompter' ? 'rgba(123,145,184,0.25)' : 'rgba(244,234,213,0.06)',
+            border: scriptMode === 'teleprompter' ? '1px solid rgba(123,145,184,0.4)' : '1px solid rgba(244,234,213,0.12)',
+            borderRadius: '6px',
+            color: scriptMode === 'teleprompter' ? '#7B91B8' : 'rgba(244,234,213,0.6)',
+            cursor: 'pointer',
+            transition: 'all 0.2s'
+          }}
+        >
+          📖 Teleprompter Mode
+        </button>
+      </div>
+
       {/* Script block */}
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', minHeight: 0 }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px', flexShrink: 0 }}>
-          <span style={{ fontSize: '10px', textTransform: 'uppercase', letterSpacing: '1.2px', color: 'rgba(244,234,213,0.4)', fontFamily: 'Inter' }}>Script & Teleprompter</span>
+          <span style={{ fontSize: '10px', textTransform: 'uppercase', letterSpacing: '1.2px', color: 'rgba(244,234,213,0.4)', fontFamily: 'Inter' }}>
+            {scriptMode === 'edit' ? 'Script Notepad' : 'Script Teleprompter'}
+          </span>
           <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
             <button
               onClick={() => setFontSize(f => Math.max(10, f - 1))}
@@ -173,34 +258,208 @@ const ScriptTab: React.FC<ScriptTabProps> = ({ fontSize, setFontSize, script, se
             </button>
             <span style={{ fontSize: '10px', color: 'rgba(244,234,213,0.4)', fontFamily: 'Inter', minWidth: '22px', textAlign: 'center' }}>{fontSize}px</span>
             <button
-              onClick={() => setFontSize(f => Math.min(24, f + 1))}
+              onClick={() => setFontSize(f => Math.min(32, f + 1))}
               style={{ background: 'rgba(244,234,213,0.08)', border: 'none', color: 'rgba(244,234,213,0.6)', width: '22px', height: '22px', borderRadius: '4px', cursor: 'pointer', fontSize: '13px' }}>
               +
             </button>
           </div>
         </div>
 
-        <textarea
-          value={script}
-          onChange={e => setScript(e.target.value)}
-          spellCheck={false}
-          data-enable-grammarly="false"
-          style={{
-            flex: 1,
-            background: 'rgba(244,234,213,0.04)',
-            border: '1px solid rgba(244,234,213,0.1)',
-            borderRadius: '8px',
-            color: 'rgba(244,234,213,0.88)',
-            fontFamily: 'Lora, Georgia, serif',
-            fontSize: `${fontSize}px`,
-            lineHeight: '1.7',
-            padding: '12px',
-            resize: 'none',
-            outline: 'none',
-            width: '100%',
-          }}
-        />
+        {scriptMode === 'edit' ? (
+          <textarea
+            value={script}
+            onChange={e => setScript(e.target.value)}
+            spellCheck={false}
+            data-enable-grammarly="false"
+            style={{
+              flex: 1,
+              background: 'rgba(244,234,213,0.04)',
+              border: '1px solid rgba(244,234,213,0.1)',
+              borderRadius: '8px',
+              color: 'rgba(244,234,213,0.88)',
+              fontFamily: 'Lora, Georgia, serif',
+              fontSize: `${fontSize}px`,
+              lineHeight: '1.7',
+              padding: '12px',
+              resize: 'none',
+              outline: 'none',
+              width: '100%',
+            }}
+          />
+        ) : (
+          <div
+            style={{
+              flex: 1,
+              background: 'rgba(0,0,0,0.2)',
+              border: '1px solid rgba(244,234,213,0.08)',
+              borderRadius: '8px',
+              color: 'rgba(244,234,213,0.9)',
+              fontFamily: 'Lora, Georgia, serif',
+              fontSize: `${fontSize}px`,
+              lineHeight: '1.7',
+              padding: '12px',
+              overflowY: 'auto',
+              whiteSpace: 'pre-wrap',
+              userSelect: 'none',
+            }}
+          >
+            {script || <span style={{ opacity: 0.3, fontStyle: 'italic' }}>Script is empty. Go back to Edit mode to write something.</span>}
+          </div>
+        )}
       </div>
+
+      {/* Teleprompter Rollback Controller Section */}
+      {scriptMode === 'teleprompter' && (recordingStatus === 'recording' || recordingStatus === 'paused') && (
+        <div style={{ flexShrink: 0, display: 'flex', flexDirection: 'column', gap: '8px', background: 'rgba(184,103,74,0.05)', border: '1px solid rgba(184,103,74,0.15)', borderRadius: '8px', padding: '10px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <span style={{ fontSize: '10.5px', textTransform: 'uppercase', letterSpacing: '1px', color: 'var(--blush-rose)', fontFamily: 'Inter', fontWeight: 600 }}>Speech Control Panel</span>
+            <span style={{ fontSize: '11px', color: 'rgba(244,234,213,0.5)', fontFamily: 'Lora' }}>Time: {formatDuration(recordingTime)}</span>
+          </div>
+
+          {/* Quick Rollback Buttons */}
+          <div style={{ display: 'flex', gap: '5px' }}>
+            <button
+              onClick={() => onRollback(Math.max(0, recordingTime - 5))}
+              title="Discard last 5 seconds and pause"
+              style={{
+                flex: 1,
+                padding: '6px 4px',
+                fontSize: '11px',
+                background: 'rgba(232,176,154,0.12)',
+                border: '1px solid rgba(232,176,154,0.25)',
+                color: '#E8B09A',
+                borderRadius: '5px',
+                cursor: 'pointer',
+                fontWeight: 600,
+                transition: 'all 0.15s ease'
+              }}
+            >
+              ↩ -5s
+            </button>
+            <button
+              onClick={() => onRollback(Math.max(0, recordingTime - 10))}
+              title="Discard last 10 seconds and pause"
+              style={{
+                flex: 1,
+                padding: '6px 4px',
+                fontSize: '11px',
+                background: 'rgba(232,176,154,0.12)',
+                border: '1px solid rgba(232,176,154,0.25)',
+                color: '#E8B09A',
+                borderRadius: '5px',
+                cursor: 'pointer',
+                fontWeight: 600,
+                transition: 'all 0.15s ease'
+              }}
+            >
+              ↩ -10s
+            </button>
+            <button
+              onClick={() => onRollback(Math.max(0, recordingTime - 30))}
+              title="Discard last 30 seconds and pause"
+              style={{
+                flex: 1,
+                padding: '6px 4px',
+                fontSize: '11px',
+                background: 'rgba(232,176,154,0.12)',
+                border: '1px solid rgba(232,176,154,0.25)',
+                color: '#E8B09A',
+                borderRadius: '5px',
+                cursor: 'pointer',
+                fontWeight: 600,
+                transition: 'all 0.15s ease'
+              }}
+            >
+              ↩ -30s
+            </button>
+          </div>
+
+          {/* Precision Rollback Slider */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', marginTop: '2px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10.5px', color: 'rgba(244,234,213,0.6)' }}>
+              <span>Precision Rollback</span>
+              <span>Discard last {customRollbackSecs}s</span>
+            </div>
+            <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+              <input
+                type="range"
+                min="1"
+                max={Math.max(1, recordingTime)}
+                value={customRollbackSecs}
+                disabled={recordingTime <= 1}
+                onChange={e => setCustomRollbackSecs(parseInt(e.target.value))}
+                style={{ flex: 1, accentColor: 'var(--terracotta)', cursor: 'pointer' }}
+              />
+              <button
+                disabled={recordingTime <= 1}
+                onClick={() => onRollback(Math.max(0, recordingTime - customRollbackSecs))}
+                style={{
+                  padding: '4px 10px',
+                  background: 'var(--terracotta)',
+                  color: '#F4EAD5',
+                  border: 'none',
+                  borderRadius: '5px',
+                  fontSize: '11px',
+                  fontWeight: 600,
+                  cursor: recordingTime <= 1 ? 'not-allowed' : 'pointer',
+                  opacity: recordingTime <= 1 ? 0.5 : 1
+                }}
+              >
+                Go
+              </button>
+            </div>
+          </div>
+
+          {/* Interactive Click-to-Rollback Transcript */}
+          {transcriptWords.length > 0 && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '5px', marginTop: '4px' }}>
+              <span style={{ fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.8px', color: 'rgba(244,234,213,0.4)', fontFamily: 'Inter', fontWeight: 600 }}>Spoken Timeline (Click word to retry)</span>
+              <div style={{
+                maxHeight: '90px',
+                overflowY: 'auto',
+                background: 'rgba(0,0,0,0.3)',
+                border: '1px solid rgba(244,234,213,0.08)',
+                borderRadius: '6px',
+                padding: '6px 8px',
+                lineHeight: '1.6',
+                fontSize: '11.5px',
+                fontFamily: 'Lora, Georgia, serif'
+              }}>
+                {transcriptWords.map((w, idx) => (
+                  <span
+                    key={idx}
+                    onClick={() => {
+                      if (confirm(`Do you want to rollback to ${formatDuration(w.time)}? This will delete all recording from that point onward.`)) {
+                        onRollback(w.time);
+                      }
+                    }}
+                    style={{
+                      cursor: 'pointer',
+                      padding: '1px 2px',
+                      borderRadius: '3px',
+                      color: 'rgba(244,234,213,0.8)',
+                      transition: 'all 0.2s',
+                      display: 'inline-block',
+                      marginRight: '3px'
+                    }}
+                    title={`Click to rollback to ${formatDuration(w.time)}`}
+                    onMouseEnter={e => {
+                      e.currentTarget.style.background = 'rgba(184,103,74,0.35)';
+                      e.currentTarget.style.color = '#fff';
+                    }}
+                    onMouseLeave={e => {
+                      e.currentTarget.style.background = 'transparent';
+                      e.currentTarget.style.color = 'rgba(244,234,213,0.8)';
+                    }}
+                  >
+                    {w.text}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* AI Prompts & Suggestions panel */}
       {isAiEnabled && (
@@ -266,8 +525,13 @@ export const SidebarControls: React.FC<SidebarControlsProps> = ({
   setWebcamPosition,
   webcamStyle,
   setWebcamStyle,
+  webcamShape,
+  setWebcamShape,
+  webcamAutoFraming,
+  setWebcamAutoFraming,
   webcamWidth,
   setWebcamWidth,
+  webcamHeight,
   setWebcamHeight,
   widgetsVisible,
   toggleWidget,
@@ -308,8 +572,20 @@ export const SidebarControls: React.FC<SidebarControlsProps> = ({
   recordingTime,
   hasRecoverableVideo,
   onRecoverVideo,
+  onResumeSession,
+  onDiscardSession,
+  isMobileMode,
+  setIsMobileMode,
+  activeTab,
+  setActiveTab,
+  micLevel,
+  screenLevel,
+  onDeleteScene,
+  exportSeparately,
+  setExportSeparately,
+  transcriptWords,
+  onRollback,
 }) => {
-  const [activeTab, setActiveTab] = useState<'canvas' | 'script' | 'record'>('canvas');
   const activeScene = scenes.find(s => s.id === activeSceneId);
   const [fontSize, setFontSize] = useState(13);
   const [editingSceneId, setEditingSceneId] = useState<string | null>(null);
@@ -442,7 +718,18 @@ export const SidebarControls: React.FC<SidebarControlsProps> = ({
 
       {/* ---- Script & Loops Tab ---- */}
       {!isCollapsed && activeTab === 'script' && (
-        <ScriptTab fontSize={fontSize} setFontSize={setFontSize} script={scriptText} setScript={setScriptText} aiSuggestions={aiSuggestions} isAiEnabled={isAiEnabled} />
+        <ScriptTab
+          fontSize={fontSize}
+          setFontSize={setFontSize}
+          script={scriptText}
+          setScript={setScriptText}
+          aiSuggestions={aiSuggestions}
+          isAiEnabled={isAiEnabled}
+          transcriptWords={transcriptWords}
+          onRollback={onRollback}
+          recordingStatus={recordingStatus}
+          recordingTime={recordingTime}
+        />
       )}
 
       {/* ---- Canvas Controls Tab ---- */}
@@ -669,28 +956,55 @@ export const SidebarControls: React.FC<SidebarControlsProps> = ({
 
                     <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0 }}>
                       {!isEditing && (
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setEditingSceneId(s.id);
-                            setTempSceneName(s.name);
-                          }}
-                          title="Rename scene"
-                          style={{
-                            background: 'transparent',
-                            border: 'none',
-                            color: '#F4EAD5',
-                            opacity: 0.5,
-                            cursor: 'pointer',
-                            display: 'flex',
-                            alignItems: 'center',
-                            padding: '2px',
-                          }}
-                          onMouseEnter={(e) => (e.currentTarget.style.opacity = '1')}
-                          onMouseLeave={(e) => (e.currentTarget.style.opacity = '0.5')}
-                        >
-                          <Pencil size={11} />
-                        </button>
+                        <>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setEditingSceneId(s.id);
+                              setTempSceneName(s.name);
+                            }}
+                            title="Rename scene"
+                            style={{
+                              background: 'transparent',
+                              border: 'none',
+                              color: '#F4EAD5',
+                              opacity: 0.5,
+                              cursor: 'pointer',
+                              display: 'flex',
+                              alignItems: 'center',
+                              padding: '2px',
+                            }}
+                            onMouseEnter={(e) => (e.currentTarget.style.opacity = '1')}
+                            onMouseLeave={(e) => (e.currentTarget.style.opacity = '0.5')}
+                          >
+                            <Pencil size={11} />
+                          </button>
+                          {scenes.length > 1 && (
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                if (confirm(`Are you sure you want to delete scene "${s.name}"?`)) {
+                                  onDeleteScene(s.id);
+                                }
+                              }}
+                              title="Delete scene"
+                              style={{
+                                background: 'transparent',
+                                border: 'none',
+                                color: '#E8B09A',
+                                opacity: 0.5,
+                                cursor: 'pointer',
+                                display: 'flex',
+                                alignItems: 'center',
+                                padding: '2px',
+                              }}
+                              onMouseEnter={(e) => (e.currentTarget.style.opacity = '1')}
+                              onMouseLeave={(e) => (e.currentTarget.style.opacity = '0.5')}
+                            >
+                              <Trash2 size={11} />
+                            </button>
+                          )}
+                        </>
                       )}
                       <span style={{ fontSize: '9px', opacity: 0.5 }}>
                         {s.viewMode === 'fullscreen-camera' ? 'camera' : s.viewMode}
@@ -791,6 +1105,21 @@ export const SidebarControls: React.FC<SidebarControlsProps> = ({
 
           <div className="sb-divider" />
 
+          {/* Viewport Aspect Mode */}
+          <section>
+            <p className="sb-section-title">Recording Layout Mode</p>
+            <div style={{ display: 'flex', gap: '6px' }}>
+              <button className={`sb-btn ${!isMobileMode ? 'active' : ''}`} style={{ flex: 1, justifyContent: 'center' }} onClick={() => setIsMobileMode(false)}>
+                <Monitor size={13} /> Landscape
+              </button>
+              <button className={`sb-btn ${isMobileMode ? 'active' : ''}`} style={{ flex: 1, justifyContent: 'center' }} onClick={() => setIsMobileMode(true)}>
+                <Smartphone size={13} /> Portrait
+              </button>
+            </div>
+          </section>
+
+          <div className="sb-divider" />
+
           {/* Floating Widgets */}
           <section>
             <p className="sb-section-title">Floating Widgets</p>
@@ -841,6 +1170,33 @@ export const SidebarControls: React.FC<SidebarControlsProps> = ({
                   fontSize: '13px',
                 }}
               />
+
+              {/* Separate Exports Option */}
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '8px' }}>
+                <span style={{ fontSize: '11.5px', color: 'rgba(244,234,213,0.7)' }}>Export Separately</span>
+                <button
+                  disabled={recordingStatus !== 'idle'}
+                  onClick={() => setExportSeparately(!exportSeparately)}
+                  style={{
+                    background: exportSeparately ? 'rgba(184,103,74,0.25)' : 'rgba(244,234,213,0.06)',
+                    border: exportSeparately ? '1px solid rgba(184,103,74,0.5)' : '1px solid rgba(244,234,213,0.12)',
+                    color: exportSeparately ? '#E8B09A' : 'rgba(244,234,213,0.4)',
+                    borderRadius: '5px',
+                    padding: '3px 9px',
+                    cursor: recordingStatus !== 'idle' ? 'not-allowed' : 'pointer',
+                    fontSize: '11px',
+                    fontFamily: 'Inter',
+                    fontWeight: 600,
+                    transition: 'all 0.2s ease',
+                    opacity: recordingStatus !== 'idle' ? 0.6 : 1,
+                  }}
+                >
+                  {exportSeparately ? 'ON' : 'OFF'}
+                </button>
+              </div>
+              <p style={{ fontSize: '9.5px', color: 'rgba(244,234,213,0.25)', lineHeight: '1.4', margin: '2px 0 0 0', fontFamily: 'Inter' }}>
+                Export presentation slides and camera webcam feed as two separate synced `.webm` files.
+              </p>
             </div>
           </section>
 
@@ -865,6 +1221,13 @@ export const SidebarControls: React.FC<SidebarControlsProps> = ({
                   ))}
                   {micsList.length === 0 && <option value="">No Microphones Found</option>}
                 </select>
+                {/* Microphone Audio Level Indicator */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '4px' }}>
+                  <div style={{ flex: 1, height: '6px', background: 'rgba(244,234,213,0.1)', borderRadius: '3px', overflow: 'hidden' }}>
+                    <div style={{ width: `${micLevel}%`, height: '100%', background: 'var(--sage)', transition: 'width 0.08s ease' }} />
+                  </div>
+                  <span style={{ fontSize: '10px', color: 'rgba(244,234,213,0.4)', minWidth: '24px', textAlign: 'right' }}>{micLevel}%</span>
+                </div>
               </div>
 
               {/* Camera list select */}
@@ -885,6 +1248,19 @@ export const SidebarControls: React.FC<SidebarControlsProps> = ({
                 </select>
               </div>
 
+              {/* Screen Audio Level (Only show when recording is active) */}
+              {recordingStatus === 'recording' && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', marginTop: '4px' }}>
+                  <span style={{ color: 'rgba(244,234,213,0.45)' }}>Screen Audio Level</span>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <div style={{ flex: 1, height: '6px', background: 'rgba(244,234,213,0.1)', borderRadius: '3px', overflow: 'hidden' }}>
+                      <div style={{ width: `${screenLevel}%`, height: '100%', background: 'var(--slate-blue)', transition: 'width 0.08s ease' }} />
+                    </div>
+                    <span style={{ fontSize: '10px', color: 'rgba(244,234,213,0.4)', minWidth: '24px', textAlign: 'right' }}>{screenLevel}%</span>
+                  </div>
+                </div>
+              )}
+
             </div>
           </section>
 
@@ -904,29 +1280,73 @@ export const SidebarControls: React.FC<SidebarControlsProps> = ({
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <span>Position</span>
                   <select value={webcamPosition} onChange={e => setWebcamPosition(e.target.value as WebcamPosition)} style={inlineSelectStyle}>
-                    <option value="top-left">Top Left</option>
-                    <option value="top-right">Top Right</option>
-                    <option value="bottom-left">Bottom Left</option>
-                    <option value="bottom-right">Bottom Right</option>
-                    <option value="fullscreen">Fullscreen Camera</option>
+                    <option value="top-left" style={{ background: '#2C1F15', color: '#F4EAD5' }}>Top Left</option>
+                    <option value="top-right" style={{ background: '#2C1F15', color: '#F4EAD5' }}>Top Right</option>
+                    <option value="bottom-left" style={{ background: '#2C1F15', color: '#F4EAD5' }}>Bottom Left</option>
+                    <option value="bottom-right" style={{ background: '#2C1F15', color: '#F4EAD5' }}>Bottom Right</option>
+                    <option value="fullscreen" style={{ background: '#2C1F15', color: '#F4EAD5' }}>Fullscreen Camera</option>
+                    {webcamPosition === 'custom' && <option value="custom" style={{ background: '#2C1F15', color: '#F4EAD5' }}>Custom (Draggable)</option>}
                   </select>
                 </div>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <span>Style</span>
+                  <span>Frame</span>
                   <select value={webcamStyle} onChange={e => setWebcamStyle(e.target.value as WebcamStyle)} style={inlineSelectStyle}>
-                    <option value="placeholder">Boundary Glow</option>
-                    <option value="chroma-green">Chroma Green</option>
-                    <option value="chroma-magenta">Chroma Magenta</option>
+                    <option value="none" style={{ background: '#2C1F15', color: '#F4EAD5' }}>None</option>
+                    <option value="glow" style={{ background: '#2C1F15', color: '#F4EAD5' }}>Classic Glow</option>
+                    <option value="sage" style={{ background: '#2C1F15', color: '#F4EAD5' }}>Sage Border</option>
+                    <option value="slate" style={{ background: '#2C1F15', color: '#F4EAD5' }}>Slate Border</option>
+                    <option value="blush" style={{ background: '#2C1F15', color: '#F4EAD5' }}>Blush Border</option>
+                    <option value="polaroid" style={{ background: '#2C1F15', color: '#F4EAD5' }}>Vintage Polar</option>
+                    <option value="chroma-green" style={{ background: '#2C1F15', color: '#F4EAD5' }}>Chroma Green Screen</option>
+                    <option value="chroma-magenta" style={{ background: '#2C1F15', color: '#F4EAD5' }}>Chroma Magenta Screen</option>
                   </select>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span>Shape</span>
+                  <select value={webcamShape} onChange={e => setWebcamShape(e.target.value as WebcamShape)} style={inlineSelectStyle}>
+                    <option value="rectangle" style={{ background: '#2C1F15', color: '#F4EAD5' }}>Rectangle</option>
+                    <option value="square" style={{ background: '#2C1F15', color: '#F4EAD5' }}>Square</option>
+                    <option value="circle" style={{ background: '#2C1F15', color: '#F4EAD5' }}>Circle</option>
+                  </select>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span>Auto Framing</span>
+                  <button
+                    onClick={() => setWebcamAutoFraming(!webcamAutoFraming)}
+                    style={{
+                      background: webcamAutoFraming ? 'rgba(138,166,142,0.25)' : 'rgba(244,234,213,0.06)',
+                      border: webcamAutoFraming ? '1px solid rgba(138,166,142,0.5)' : '1px solid rgba(244,234,213,0.12)',
+                      color: webcamAutoFraming ? '#8AA68E' : 'rgba(244,234,213,0.4)',
+                      borderRadius: '5px',
+                      padding: '3px 9px',
+                      cursor: 'pointer',
+                      fontSize: '11px',
+                      fontFamily: 'Inter',
+                      fontWeight: 600,
+                      transition: 'all 0.2s ease',
+                    }}
+                  >
+                    {webcamAutoFraming ? 'ON' : 'OFF'}
+                  </button>
                 </div>
                 {webcamPosition !== 'fullscreen' && (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                       <span>Size</span>
-                      <span style={{ opacity: 0.6 }}>{webcamWidth}×{Math.round(webcamWidth * 9 / 16)}px</span>
+                      <span style={{ opacity: 0.6 }}>
+                        {webcamWidth}×{webcamHeight}px
+                      </span>
                     </div>
                     <input type="range" min="160" max="640" step="20" value={webcamWidth}
-                      onChange={e => { const w = parseInt(e.target.value); setWebcamWidth(w); setWebcamHeight(Math.round(w * 9 / 16)); }}
+                      onChange={e => {
+                        const w = parseInt(e.target.value);
+                        setWebcamWidth(w);
+                        if (webcamShape === 'rectangle') {
+                          setWebcamHeight(Math.round(isMobileMode ? (w * 16 / 9) : (w * 9 / 16)));
+                        } else {
+                          setWebcamHeight(w);
+                        }
+                      }}
                       style={{ accentColor: 'var(--terracotta)', cursor: 'pointer', width: '100%' }} />
                   </div>
                 )}
@@ -1008,35 +1428,105 @@ export const SidebarControls: React.FC<SidebarControlsProps> = ({
               background: 'rgba(184,103,74,0.12)',
               border: '1px solid rgba(184,103,74,0.3)',
               borderRadius: '8px',
-              padding: '12px',
+              padding: '14px',
               display: 'flex',
               flexDirection: 'column',
-              gap: '8px',
+              gap: '10px',
               marginTop: '10px',
             }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: '#E8B09A' }}>
-                <AlertTriangle size={14} />
-                <span style={{ fontSize: '12px', fontWeight: 600 }}>Unsaved Recording Found</span>
+                <AlertTriangle size={15} />
+                <span style={{ fontSize: '13px', fontWeight: 600, fontFamily: 'Inter' }}>Unsaved Recording Found</span>
               </div>
-              <p style={{ fontSize: '11px', color: 'rgba(244,234,213,0.7)', lineHeight: '1.4' }}>
-                It looks like the browser closed unexpectedly during your last recording. You can recover your video now.
+              <p style={{ fontSize: '11px', color: 'rgba(244,234,213,0.7)', lineHeight: '1.45', margin: 0, fontFamily: 'Lora' }}>
+                It looks like the browser closed unexpectedly during your last session. You can choose to resume the session, stitch the existing segments, or discard them.
               </p>
-              <button
-                onClick={onRecoverVideo}
-                style={{
-                  background: 'var(--terracotta)',
-                  border: 'none',
-                  borderRadius: '5px',
-                  color: '#F4EAD5',
-                  padding: '6px 10px',
-                  fontSize: '11.5px',
-                  fontWeight: 600,
-                  cursor: 'pointer',
-                  width: '100%',
-                }}
-              >
-                Recover Video File
-              </button>
+              
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '4px' }}>
+                <button
+                  onClick={onResumeSession}
+                  style={{
+                    background: 'rgba(138,166,142,0.25)',
+                    border: '1px solid rgba(138,166,142,0.45)',
+                    borderRadius: '6px',
+                    color: '#8AA68E',
+                    padding: '8px 10px',
+                    fontSize: '11.5px',
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '6px',
+                    width: '100%',
+                    transition: 'all 0.2s',
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.background = 'rgba(138,166,142,0.35)';
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.background = 'rgba(138,166,142,0.25)';
+                  }}
+                >
+                  <Video size={13} /> Resume Recording
+                </button>
+
+                <button
+                  onClick={onRecoverVideo}
+                  style={{
+                    background: 'var(--terracotta)',
+                    border: 'none',
+                    borderRadius: '6px',
+                    color: '#F4EAD5',
+                    padding: '8px 10px',
+                    fontSize: '11.5px',
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '6px',
+                    width: '100%',
+                    transition: 'all 0.2s',
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.filter = 'brightness(1.15)';
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.filter = 'none';
+                  }}
+                >
+                  <Download size={13} /> Stitch & Download
+                </button>
+
+                <button
+                  onClick={onDiscardSession}
+                  style={{
+                    background: 'rgba(232,176,154,0.08)',
+                    border: '1px solid rgba(232,176,154,0.2)',
+                    borderRadius: '6px',
+                    color: '#E8B09A',
+                    padding: '8px 10px',
+                    fontSize: '11.5px',
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '6px',
+                    width: '100%',
+                    transition: 'all 0.2s',
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.background = 'rgba(232,176,154,0.18)';
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.background = 'rgba(232,176,154,0.08)';
+                  }}
+                >
+                  <Trash2 size={13} /> Discard Session
+                </button>
+              </div>
             </section>
           )}
 
@@ -1049,6 +1539,13 @@ export const SidebarControls: React.FC<SidebarControlsProps> = ({
       {/* Collapsed icon strip */}
       {isCollapsed && (
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '18px', padding: '20px 0' }}>
+          <button
+            onClick={() => setIsMobileMode(!isMobileMode)}
+            style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}
+            title={isMobileMode ? "Switch to Landscape Mode" : "Switch to Portrait Mode"}
+          >
+            {isMobileMode ? <Smartphone size={15} style={{ color: 'var(--terracotta)', opacity: 0.9 }} /> : <Monitor size={15} style={{ color: 'rgba(244,234,213,0.5)', opacity: 0.6 }} />}
+          </button>
           <Settings size={15} style={{ color: 'var(--terracotta)', opacity: 0.6 }} />
           <Palette size={14} style={{ color: 'var(--warm-gold)', opacity: 0.5 }} />
           <Camera size={13} style={{ color: 'var(--sage)', opacity: 0.5 }} />

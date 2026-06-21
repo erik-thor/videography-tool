@@ -5,7 +5,16 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+    container_name: videography-tool-web
     ports:
       - "8080:80"
+    networks:
+      - default
+      - tools_network
     restart: always
+
+networks:
+  tools_network:
+    external: true
+
 

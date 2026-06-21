@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Globe, Image as ImageIcon, Upload, Youtube, X } from 'lucide-react';
+import { Globe, Image as ImageIcon, Upload, Youtube, X, Pencil, ExternalLink } from 'lucide-react';
 
 interface MediaCanvasViewProps {
   theme: 'light' | 'dark';
@@ -9,7 +9,7 @@ interface MediaCanvasViewProps {
 
 // Extract youtube video ID from a URL
 const getYoutubeId = (url: string): string | null => {
-  const regExp = /^.*(youtu\.be\/|v\/|u\/\w\/|embed\/|watch\?v=|&v=)([^#&?]*).*/;
+  const regExp = /^.*(youtu\.be\/|v\/|u\/\w\/|embed\/|watch\?v=|&v=|shorts\/|live\/)([^#&?]*).*/;
   const match = url.match(regExp);
   return match && match[2].length === 11 ? match[2] : null;
 };
@@ -36,6 +36,168 @@ export const MediaCanvasView: React.FC<MediaCanvasViewProps> = ({
     setLoadedWebUrl(data.loadedWebUrl);
     setYoutubeId(data.youtubeId);
   }, [data]);
+
+  useEffect(() => {
+    const handleGlobalPaste = (e: ClipboardEvent) => {
+      const target = e.target as HTMLElement;
+      const isInput = target.tagName === 'INPUT' || target.tagName === 'TEXTAREA';
+      
+      // If typing inside another input/textarea (like speech recognition script editor), do not intercept
+      if (isInput && !target.classList.contains('media-input')) {
+        return;
+      }
+
+      // Check if there is an image in clipboard items (paste screenshot or copied image file directly)
+      const items = e.clipboardData?.items;
+      if (items) {
+        for (let i = 0; i < items.length; i++) {
+          if (items[i].type.indexOf('image') !== -1) {
+            const file = items[i].getAsFile();
+            if (file) {
+              e.preventDefault();
+              const url = URL.createObjectURL(file);
+              setActiveTab('image');
+              setImageSrc(url);
+              setImageError(false);
+              setInputWarning('');
+              onChange?.({
+                activeTab: 'image',
+                imageSrc: url,
+                imageUrlInput: '',
+                webUrlInput: '',
+                loadedWebUrl: '',
+                youtubeId: null
+              });
+              return;
+            }
+          }
+        }
+      }
+
+      const pastedText = e.clipboardData?.getData('text');
+      if (pastedText) {
+        const trimmed = pastedText.trim();
+        // Check if it's a URL
+        const isUrl = /^(https?:\/\/)?(localhost|127\.0\.0\.1|([a-zA-Z0-9-]+\.)+[a-zA-Z]{2,})(:\d+)?(\/.*)?$/i.test(trimmed) || getYoutubeId(trimmed) !== null;
+        if (isUrl) {
+          // If typing inside our own inputs, allow default paste but auto-load/embed on a tiny delay
+          if (isInput && target.classList.contains('media-input')) {
+            setTimeout(() => {
+              const val = (target as HTMLInputElement).value.trim();
+              if ((target as HTMLInputElement).placeholder.includes('image')) {
+                if (!val) return;
+                let finalUrl = val;
+                if (/^[a-zA-Z0-9-]+\.[a-zA-Z]{2,}/i.test(val) && !/^https?:\/\//i.test(val)) {
+                  finalUrl = 'https://' + val;
+                }
+                setImageSrc(finalUrl);
+                setImageError(false);
+                setInputWarning('');
+                onChange?.({
+                  activeTab: 'image',
+                  imageSrc: finalUrl,
+                  imageUrlInput: val,
+                  webUrlInput: '',
+                  loadedWebUrl: '',
+                  youtubeId: null
+                });
+              } else {
+                if (!val) return;
+                let finalUrl = val;
+                if (!/^https?:\/\//i.test(val)) {
+                  if (/^(localhost|127\.0\.0\.1)(:\d+)?/i.test(val)) {
+                    finalUrl = 'http://' + val;
+                  } else {
+                    finalUrl = 'https://' + val;
+                  }
+                }
+                const ytId = getYoutubeId(val);
+                setLoadedWebUrl(finalUrl);
+                setYoutubeId(ytId);
+                setInputWarning('');
+                setImageError(false);
+                onChange?.({
+                  activeTab: 'web',
+                  imageSrc: '',
+                  imageUrlInput: '',
+                  webUrlInput: val,
+                  loadedWebUrl: finalUrl,
+                  youtubeId: ytId
+                });
+              }
+            }, 50);
+            return;
+          }
+
+          // Global paste outside any inputs
+          e.preventDefault();
+          let finalUrl = trimmed;
+          const ytId = getYoutubeId(trimmed);
+          
+          if (ytId) {
+            setActiveTab('web');
+            setWebUrlInput(trimmed);
+            setLoadedWebUrl(trimmed);
+            setYoutubeId(ytId);
+            setInputWarning('');
+            setImageError(false);
+            onChange?.({
+              activeTab: 'web',
+              imageSrc: '',
+              imageUrlInput: '',
+              webUrlInput: trimmed,
+              loadedWebUrl: trimmed,
+              youtubeId: ytId
+            });
+          } else if (/\.(jpeg|jpg|gif|png|webp|svg|bmp|ico)(?:\?.*)?$/i.test(trimmed)) {
+            if (/^[a-zA-Z0-9-]+\.[a-zA-Z]{2,}/i.test(trimmed) && !/^https?:\/\//i.test(trimmed)) {
+              finalUrl = 'https://' + trimmed;
+            }
+            setActiveTab('image');
+            setImageUrlInput(trimmed);
+            setImageSrc(finalUrl);
+            setInputWarning('');
+            setImageError(false);
+            onChange?.({
+              activeTab: 'image',
+              imageSrc: finalUrl,
+              imageUrlInput: trimmed,
+              webUrlInput: '',
+              loadedWebUrl: '',
+              youtubeId: null
+            });
+          } else {
+            if (!/^https?:\/\//i.test(trimmed)) {
+              if (/^(localhost|127\.0\.0\.1)(:\d+)?/i.test(trimmed)) {
+                finalUrl = 'http://' + trimmed;
+              } else {
+                finalUrl = 'https://' + trimmed;
+              }
+            }
+            setActiveTab('web');
+            setWebUrlInput(trimmed);
+            setLoadedWebUrl(finalUrl);
+            setYoutubeId(null);
+            setInputWarning('');
+            setImageError(false);
+            onChange?.({
+              activeTab: 'web',
+              imageSrc: '',
+              imageUrlInput: '',
+              webUrlInput: trimmed,
+              loadedWebUrl: finalUrl,
+              youtubeId: null
+            });
+          }
+        }
+      }
+    };
+
+    window.addEventListener('paste', handleGlobalPaste);
+    return () => {
+      window.removeEventListener('paste', handleGlobalPaste);
+    };
+  }, [onChange]);
 
   const handleUpdate = (updatedFields: Partial<NonNullable<typeof data>>) => {
     if (onChange) {
@@ -82,7 +244,7 @@ export const MediaCanvasView: React.FC<MediaCanvasViewProps> = ({
     if (!val) return;
     setImageError(false);
     setInputWarning('');
-    
+
     if (checkLocalPathWarning(val)) return;
 
     // Check if it looks like a website URL or localhost/server rather than an image
@@ -204,7 +366,26 @@ export const MediaCanvasView: React.FC<MediaCanvasViewProps> = ({
                     The browser refused to load the image URL you provided.
                     If this is a local path (e.g. <code>C:/...</code>), browsers block it due to web security policies. Please use the <strong>Click to upload image or screenshot</strong> box above to load local files.
                   </p>
-                  <button onClick={handleClearMedia} style={btnStyle}>Go Back</button>
+                  <div style={{ display: 'flex', gap: '10px' }}>
+                    <button
+                      onClick={() => {
+                        setImageSrc('');
+                        setLoadedWebUrl('');
+                        setYoutubeId(null);
+                        setImageError(false);
+                        handleUpdate({ imageSrc: '', loadedWebUrl: '', youtubeId: null });
+                      }}
+                      style={btnStyle}
+                    >
+                      Edit URL
+                    </button>
+                    <button
+                      onClick={handleClearMedia}
+                      style={{ ...btnStyle, background: 'rgba(244,234,213,0.1)', border: `1.5px solid ${border}`, color: text }}
+                    >
+                      Clear
+                    </button>
+                  </div>
                 </div>
               </div>
             ) : (
@@ -231,6 +412,66 @@ export const MediaCanvasView: React.FC<MediaCanvasViewProps> = ({
               style={{ width: '100%', height: '100%', border: 'none', display: 'block', backgroundColor: '#fff' }}
             />
           )}
+
+          {/* Floating open in new tab button (top-right) - only for general websites */}
+          {loadedWebUrl && !youtubeId && (
+            <a
+              href={loadedWebUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              title="Open website in new tab"
+              style={{
+                position: 'absolute',
+                top: '20px',
+                right: '120px',
+                width: '40px',
+                height: '40px',
+                borderRadius: '50%',
+                background: 'rgba(0,0,0,0.55)',
+                border: '1.5px solid rgba(255,255,255,0.3)',
+                color: '#fff',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                zIndex: 10,
+                backdropFilter: 'blur(6px)',
+              }}
+            >
+              <ExternalLink size={16} />
+            </a>
+          )}
+
+          {/* Floating edit button (top-right) */}
+          <button
+            onClick={() => {
+              setImageSrc('');
+              setLoadedWebUrl('');
+              setYoutubeId(null);
+              setImageError(false);
+              handleUpdate({ imageSrc: '', loadedWebUrl: '', youtubeId: null });
+            }}
+            title="Edit URL"
+            style={{
+              position: 'absolute',
+              top: '20px',
+              right: '70px',
+              width: '40px',
+              height: '40px',
+              borderRadius: '50%',
+              background: 'rgba(0,0,0,0.55)',
+              border: '1.5px solid rgba(255,255,255,0.3)',
+              color: '#fff',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              zIndex: 10,
+              backdropFilter: 'blur(6px)',
+            }}
+          >
+            <Pencil size={16} />
+          </button>
 
           {/* Floating clear button (top-right) */}
           <button
@@ -351,6 +592,7 @@ export const MediaCanvasView: React.FC<MediaCanvasViewProps> = ({
                   spellCheck={false}
                   data-enable-grammarly="false"
                   style={inputStyle}
+                  className="media-input"
                 />
                 <button onClick={handleLoadImageUrl} style={btnStyle}>
                   Load
@@ -396,6 +638,7 @@ export const MediaCanvasView: React.FC<MediaCanvasViewProps> = ({
                   spellCheck={false}
                   data-enable-grammarly="false"
                   style={inputStyle}
+                  className="media-input"
                 />
                 <button onClick={handleLoadWebUrl} style={{ ...btnStyle, display: 'flex', alignItems: 'center', gap: '6px' }}>
                   <Globe size={14} />
@@ -414,7 +657,7 @@ export const MediaCanvasView: React.FC<MediaCanvasViewProps> = ({
                 borderRadius: '8px',
                 border: `1px solid ${border}`
               }}>
-                ℹ️ <strong>Note on Embedding:</strong> Many websites (e.g. Google, GitHub, and major blogs) block iframe embedding for security (via <code>X-Frame-Options</code> or <code>Content-Security-Policy</code> headers). Local servers (e.g. <code>http://localhost:3000</code>) will embed correctly if they are running and allow framing.
+                ℹ️ <strong>Note on Embedding:</strong> Many websites (e.g. Google, GitHub, and major blogs) block iframe embedding for security (via <code>X-Frame-Options</code> or <code>Content-Security-Policy</code> headers). Local servers (e.g. <code>http://localhost:2000</code>) will embed correctly if they are running and allow framing.
               </div>
             </div>
           )}

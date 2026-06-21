@@ -3,11 +3,14 @@ import { AMBIENT_SOUNDS, TRANSITION_SOUNDS, initAudio } from './audioRegistry';
 // IndexedDB Helper functions for crash-safe progressive recording
 const openDB = (): Promise<IDBDatabase> => {
   return new Promise((resolve, reject) => {
-    const request = indexedDB.open('InteractiveVideoRecorderDB', 1);
-    request.onupgradeneeded = () => {
+    const request = indexedDB.open('InteractiveVideoRecorderDB', 2);
+    request.onupgradeneeded = (e: any) => {
       const db = request.result;
       if (!db.objectStoreNames.contains('chunks')) {
         db.createObjectStore('chunks', { autoIncrement: true });
+      }
+      if (!db.objectStoreNames.contains('webcam_chunks')) {
+        db.createObjectStore('webcam_chunks', { autoIncrement: true });
       }
       if (!db.objectStoreNames.contains('metadata')) {
         db.createObjectStore('metadata');
@@ -29,11 +32,31 @@ export const clearRecordingChunks = async (): Promise<void> => {
   });
 };
 
-export const saveRecordingChunk = async (chunk: Blob): Promise<void> => {
+export const clearWebcamChunks = async (): Promise<void> => {
+  const db = await openDB();
+  return new Promise<void>((resolve, reject) => {
+    const tx = db.transaction(['webcam_chunks'], 'readwrite');
+    tx.objectStore('webcam_chunks').clear();
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
+};
+
+export const saveRecordingChunk = async (segmentId: string, sequence: number, chunk: Blob): Promise<void> => {
   const db = await openDB();
   return new Promise<void>((resolve, reject) => {
     const tx = db.transaction('chunks', 'readwrite');
-    tx.objectStore('chunks').add(chunk);
+    tx.objectStore('chunks').add({ segmentId, sequence, blob: chunk });
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
+};
+
+export const saveWebcamChunk = async (segmentId: string, sequence: number, chunk: Blob): Promise<void> => {
+  const db = await openDB();
+  return new Promise<void>((resolve, reject) => {
+    const tx = db.transaction('webcam_chunks', 'readwrite');
+    tx.objectStore('webcam_chunks').add({ segmentId, sequence, blob: chunk });
     tx.oncomplete = () => resolve();
     tx.onerror = () => reject(tx.error);
   });
@@ -49,6 +72,30 @@ export const saveRecordingMetadata = async (name: string): Promise<void> => {
   });
 };
 
+export const saveRecordingManifest = async (manifest: any[]): Promise<void> => {
+  const db = await openDB();
+  return new Promise<void>((resolve, reject) => {
+    const tx = db.transaction('metadata', 'readwrite');
+    tx.objectStore('metadata').put(manifest, 'recordingManifest');
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
+};
+
+export const getRecordingManifest = async (): Promise<any[]> => {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction('metadata', 'readonly');
+    const store = tx.objectStore('metadata');
+    const req = store.get('recordingManifest');
+    req.onsuccess = (e: any) => {
+      resolve(e.target.result || []);
+    };
+    req.onerror = () => reject(tx.error);
+  });
+};
+
+
 export const getRecordingChunks = async (): Promise<{ name: string; chunks: Blob[] }> => {
   const db = await openDB();
   return new Promise((resolve, reject) => {
@@ -57,7 +104,7 @@ export const getRecordingChunks = async (): Promise<{ name: string; chunks: Blob
     const metaStore = tx.objectStore('metadata');
     
     let name = 'recovered_video';
-    const chunks: Blob[] = [];
+    const records: { sequence: number; blob: Blob }[] = [];
     
     metaStore.get('videoName').onsuccess = (e: any) => {
       if (e.target.result) name = e.target.result;
@@ -66,13 +113,169 @@ export const getRecordingChunks = async (): Promise<{ name: string; chunks: Blob
     chunksStore.openCursor().onsuccess = (e: any) => {
       const cursor = e.target.result;
       if (cursor) {
-        chunks.push(cursor.value);
+        const val = cursor.value;
+        if (val instanceof Blob) {
+          records.push({ sequence: 0, blob: val });
+        } else if (val && val.blob) {
+          records.push({
+            sequence: typeof val.sequence === 'number' ? val.sequence : 0,
+            blob: val.blob
+          });
+        }
         cursor.continue();
       } else {
-        resolve({ name, chunks });
+        records.sort((a, b) => a.sequence - b.sequence);
+        resolve({ name, chunks: records.map(r => r.blob) });
       }
     };
     
+    tx.onerror = () => reject(tx.error);
+  });
+};
+
+export const getWebcamChunks = async (): Promise<{ name: string; chunks: Blob[] }> => {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(['webcam_chunks', 'metadata'], 'readonly');
+    const webcamStore = tx.objectStore('webcam_chunks');
+    const metaStore = tx.objectStore('metadata');
+    
+    let name = 'recovered_video';
+    const records: { sequence: number; blob: Blob }[] = [];
+    
+    metaStore.get('videoName').onsuccess = (e: any) => {
+      if (e.target.result) name = e.target.result;
+    };
+    
+    webcamStore.openCursor().onsuccess = (e: any) => {
+      const cursor = e.target.result;
+      if (cursor) {
+        const val = cursor.value;
+        if (val instanceof Blob) {
+          records.push({ sequence: 0, blob: val });
+        } else if (val && val.blob) {
+          records.push({
+            sequence: typeof val.sequence === 'number' ? val.sequence : 0,
+            blob: val.blob
+          });
+        }
+        cursor.continue();
+      } else {
+        records.sort((a, b) => a.sequence - b.sequence);
+        resolve({ name, chunks: records.map(r => r.blob) });
+      }
+    };
+    
+    tx.onerror = () => reject(tx.error);
+  });
+};
+
+export const getSegmentBlob = async (segmentId: string): Promise<Blob | null> => {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction('chunks', 'readonly');
+    const store = tx.objectStore('chunks');
+    const records: { sequence: number; blob: Blob }[] = [];
+    
+    store.openCursor().onsuccess = (e: any) => {
+      const cursor = e.target.result;
+      if (cursor) {
+        const val = cursor.value;
+        if (val && typeof val === 'object' && val.segmentId === segmentId) {
+          records.push({
+            sequence: typeof val.sequence === 'number' ? val.sequence : 0,
+            blob: val.blob
+          });
+        }
+        cursor.continue();
+      } else {
+        if (records.length > 0) {
+          records.sort((a, b) => a.sequence - b.sequence);
+          console.log(`[getSegmentBlob] segmentId=${segmentId} sorted sequences:`, JSON.stringify(records.map(r => r.sequence)));
+          const blobs = records.map(r => r.blob);
+          resolve(new Blob(blobs, { type: blobs[0].type }));
+        } else {
+          console.log(`[getSegmentBlob] segmentId=${segmentId} no records found.`);
+          resolve(null);
+        }
+      }
+    };
+    tx.onerror = () => reject(tx.error);
+  });
+};
+
+export const getWebcamSegmentBlob = async (segmentId: string): Promise<Blob | null> => {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction('webcam_chunks', 'readonly');
+    const store = tx.objectStore('webcam_chunks');
+    const records: { sequence: number; blob: Blob }[] = [];
+    
+    store.openCursor().onsuccess = (e: any) => {
+      const cursor = e.target.result;
+      if (cursor) {
+        const val = cursor.value;
+        if (val && typeof val === 'object' && val.segmentId === segmentId) {
+          records.push({
+            sequence: typeof val.sequence === 'number' ? val.sequence : 0,
+            blob: val.blob
+          });
+        }
+        cursor.continue();
+      } else {
+        if (records.length > 0) {
+          records.sort((a, b) => a.sequence - b.sequence);
+          console.log(`[getWebcamSegmentBlob] segmentId=${segmentId} sorted sequences:`, JSON.stringify(records.map(r => r.sequence)));
+          const blobs = records.map(r => r.blob);
+          resolve(new Blob(blobs, { type: blobs[0].type }));
+        } else {
+          console.log(`[getWebcamSegmentBlob] segmentId=${segmentId} no records found.`);
+          resolve(null);
+        }
+      }
+    };
+    tx.onerror = () => reject(tx.error);
+  });
+};
+
+export const deleteSegment = async (segmentId: string): Promise<void> => {
+  const db = await openDB();
+  return new Promise<void>((resolve, reject) => {
+    const tx = db.transaction('chunks', 'readwrite');
+    const store = tx.objectStore('chunks');
+    store.openCursor().onsuccess = (e: any) => {
+      const cursor = e.target.result;
+      if (cursor) {
+        const val = cursor.value;
+        if (val && typeof val === 'object' && val.segmentId === segmentId) {
+          cursor.delete();
+        }
+        cursor.continue();
+      } else {
+        resolve();
+      }
+    };
+    tx.onerror = () => reject(tx.error);
+  });
+};
+
+export const deleteWebcamSegment = async (segmentId: string): Promise<void> => {
+  const db = await openDB();
+  return new Promise<void>((resolve, reject) => {
+    const tx = db.transaction('webcam_chunks', 'readwrite');
+    const store = tx.objectStore('webcam_chunks');
+    store.openCursor().onsuccess = (e: any) => {
+      const cursor = e.target.result;
+      if (cursor) {
+        const val = cursor.value;
+        if (val && typeof val === 'object' && val.segmentId === segmentId) {
+          cursor.delete();
+        }
+        cursor.continue();
+      } else {
+        resolve();
+      }
+    };
     tx.onerror = () => reject(tx.error);
   });
 };
@@ -152,3 +355,52 @@ export const checkRecoverableChunks = async (): Promise<boolean> => {
     return false;
   }
 };
+
+export const cleanUnusedSegments = async (validSegmentIds: string[]): Promise<void> => {
+  const db = await openDB();
+  const validSet = new Set(validSegmentIds);
+  return new Promise<void>((resolve, reject) => {
+    const tx = db.transaction(['chunks', 'webcam_chunks'], 'readwrite');
+    const cleanStore = (name: 'chunks' | 'webcam_chunks') => {
+      const store = tx.objectStore(name);
+      store.openCursor().onsuccess = (e: any) => {
+        const cursor = e.target.result;
+        if (cursor) {
+          const val = cursor.value;
+          if (val && typeof val === 'object' && val.segmentId && !validSet.has(val.segmentId)) {
+            cursor.delete();
+          }
+          cursor.continue();
+        }
+      };
+    };
+    cleanStore('chunks');
+    cleanStore('webcam_chunks');
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
+};
+
+export const saveMetadataValue = async (key: string, value: any): Promise<void> => {
+  const db = await openDB();
+  return new Promise<void>((resolve, reject) => {
+    const tx = db.transaction('metadata', 'readwrite');
+    tx.objectStore('metadata').put(value, key);
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
+};
+
+export const getMetadataValue = async (key: string): Promise<any> => {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction('metadata', 'readonly');
+    const store = tx.objectStore('metadata');
+    const req = store.get(key);
+    req.onsuccess = (e: any) => {
+      resolve(e.target.result);
+    };
+    req.onerror = () => reject(tx.error);
+  });
+};
+

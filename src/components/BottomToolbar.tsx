@@ -17,6 +17,9 @@ import {
   Square,
   Circle,
   Cloud,
+  Smartphone,
+  Monitor,
+  Maximize,
 } from 'lucide-react';
 import type { ViewMode } from '../App';
 
@@ -44,6 +47,8 @@ interface BottomToolbarProps {
   onPauseRecording: () => void;
   onResumeRecording: () => void;
   onStopRecording: () => void;
+  isMobileMode: boolean;
+  setIsMobileMode: (v: boolean) => void;
 }
 
 const PALETTE_COLORS = [
@@ -94,6 +99,8 @@ export const BottomToolbar: React.FC<BottomToolbarProps> = ({
   onPauseRecording,
   onResumeRecording,
   onStopRecording,
+  isMobileMode,
+  setIsMobileMode,
 }) => {
   const isDrawingActive = whiteboardActive;
 
@@ -105,7 +112,7 @@ export const BottomToolbar: React.FC<BottomToolbarProps> = ({
 
   return (
     <div className="bottom-toolbar" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
-      {/* LEFT SECTION: View Modes */}
+      {/* LEFT SECTION: View Modes & Device Toggle */}
       <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flex: 1, minWidth: 0, justifyContent: 'flex-start' }}>
         {VIEW_MODES.map(({ mode, icon, label }) => (
           <button
@@ -118,6 +125,35 @@ export const BottomToolbar: React.FC<BottomToolbarProps> = ({
             {icon}
           </button>
         ))}
+        <div className="tb-divider" />
+        <button
+          className={`tb-btn ${isMobileMode ? 'active' : ''}`}
+          onClick={() => setIsMobileMode(!isMobileMode)}
+          title={isMobileMode ? "Switch to Desktop Mode (1920x1080)" : "Switch to Mobile Mode (1080x1920)"}
+          style={{ padding: '8px 10px', display: 'flex', alignItems: 'center', gap: '4px' }}
+        >
+          {isMobileMode ? <Smartphone size={14} /> : <Monitor size={14} />}
+          <span style={{ fontSize: '11px' }}>
+            {isMobileMode ? "Portrait" : "Landscape"}
+          </span>
+        </button>
+        <button
+          className="tb-btn"
+          onClick={() => {
+            if (!document.fullscreenElement) {
+              document.documentElement.requestFullscreen().catch((err) => {
+                console.warn(`Error attempting to enable fullscreen: ${err.message}`);
+              });
+            } else {
+              document.exitFullscreen();
+            }
+          }}
+          title="Toggle Fullscreen Mode"
+          style={{ padding: '8px 10px', display: 'flex', alignItems: 'center', gap: '4px' }}
+        >
+          <Maximize size={14} />
+          <span style={{ fontSize: '11px' }}>Fullscreen</span>
+        </button>
       </div>
 
       {/* CENTER SECTION: Whiteboard Brush Tools & Spotlight */}
