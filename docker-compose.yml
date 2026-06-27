@@ -15,7 +15,8 @@ services:
 
 networks:
   tools_network:
-    name: tools_network
-    external: false
+    # If running on a laptop/local machine without this network,
+    # run: docker network create tools_network
+    external: true
 
 
