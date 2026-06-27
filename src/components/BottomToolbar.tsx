@@ -20,6 +20,7 @@ import {
   Smartphone,
   Monitor,
   Maximize,
+  Video,
 } from 'lucide-react';
 import type { ViewMode } from '../App';
 
@@ -49,6 +50,7 @@ interface BottomToolbarProps {
   onStopRecording: () => void;
   isMobileMode: boolean;
   setIsMobileMode: (v: boolean) => void;
+  micLevel: number;
 }
 
 const PALETTE_COLORS = [
@@ -71,10 +73,11 @@ const BRUSH_SIZES = [
 
 const VIEW_MODES = [
   { mode: 'whiteboard' as ViewMode, icon: <PenTool size={14} />, label: 'Whiteboard' },
-  { mode: 'media' as ViewMode, icon: <Globe size={14} />, label: 'Media' },
+  { mode: 'media' as ViewMode, icon: <Globe size={14} />, label: 'Media / Browser' },
   { mode: 'corkboard' as ViewMode, icon: <Pin size={14} />, label: 'Corkboard' },
   { mode: 'hero-journey' as ViewMode, icon: <Map size={14} />, label: "Hero's Journey" },
   { mode: 'word-cloud' as ViewMode, icon: <Cloud size={14} />, label: 'Word Cloud' },
+  { mode: 'fullscreen-camera' as ViewMode, icon: <Video size={14} />, label: 'Fullscreen Camera' },
 ];
 
 export const BottomToolbar: React.FC<BottomToolbarProps> = ({
@@ -101,6 +104,7 @@ export const BottomToolbar: React.FC<BottomToolbarProps> = ({
   onStopRecording,
   isMobileMode,
   setIsMobileMode,
+  micLevel,
 }) => {
   const isDrawingActive = whiteboardActive;
 
@@ -280,6 +284,33 @@ export const BottomToolbar: React.FC<BottomToolbarProps> = ({
           />
           <span>{formatDuration(recordingTime)}</span>
         </div>
+        
+        {/* Small Audio level meter on toolbar */}
+        {(recordingStatus === 'recording' || micLevel > 0) && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: '3px', height: '18px', padding: '0 4px' }} title={`Mic input level: ${micLevel}%`}>
+            {[1, 2, 3, 4, 5].map((index) => {
+              const active = micLevel >= index * 20;
+              let color = 'rgba(244,234,213,0.1)';
+              if (active) {
+                if (index <= 3) color = '#8AA68E'; // green (sage)
+                else if (index === 4) color = '#C9A563'; // yellow (gold)
+                else color = '#B8674A'; // red (terracotta)
+              }
+              return (
+                <div
+                  key={index}
+                  style={{
+                    width: '3px',
+                    height: `${index * 3 + 2}px`,
+                    backgroundColor: color,
+                    borderRadius: '1px',
+                    transition: 'background-color 0.08s ease',
+                  }}
+                />
+              );
+            })}
+          </div>
+        )}
 
         {/* Action button triggers */}
         {recordingStatus === 'idle' ? (

@@ -761,6 +761,9 @@ Return ONLY valid JSON in the format: {"drawings":[...]}`;
   const [previewMicStream, setPreviewMicStream] = useState<MediaStream | null>(null);
   const [activeMicStream, setActiveMicStream] = useState<MediaStream | null>(null);
   const [activeScreenStream, setActiveScreenStream] = useState<MediaStream | null>(null);
+  const [isMicMonitorEnabled, setIsMicMonitorEnabled] = useState<boolean>(false);
+  const monitorNodeRef = useRef<GainNode | null>(null);
+  const monitorSourceRef = useRef<MediaStreamAudioSourceNode | null>(null);
 
   useEffect(() => {
     if (activeTab === 'record' && recordingStatus === 'idle' && selectedMicId) {
@@ -799,6 +802,50 @@ Return ONLY valid JSON in the format: {"drawings":[...]}`;
   const currentMicStream = recordingStatus === 'recording' ? activeMicStream : previewMicStream;
   const micLevel = useAudioLevel(currentMicStream);
   const screenLevel = useAudioLevel(activeScreenStream);
+
+  // Live Microphone Headphone Monitor (Side-tone) routing
+  useEffect(() => {
+    if (monitorSourceRef.current) {
+      try { monitorSourceRef.current.disconnect(); } catch (_) {}
+      monitorSourceRef.current = null;
+    }
+    if (monitorNodeRef.current) {
+      try { monitorNodeRef.current.disconnect(); } catch (_) {}
+      monitorNodeRef.current = null;
+    }
+
+    if (!currentMicStream || !isMicMonitorEnabled) return;
+
+    try {
+      const { audioCtx } = getAudioMixer() as { audioCtx: AudioContext };
+      if (audioCtx.state === 'suspended') {
+        audioCtx.resume();
+      }
+      
+      const source = audioCtx.createMediaStreamSource(currentMicStream);
+      const gain = audioCtx.createGain();
+      gain.gain.setValueAtTime(0.8, audioCtx.currentTime);
+      
+      source.connect(gain);
+      gain.connect(audioCtx.destination);
+      
+      monitorSourceRef.current = source;
+      monitorNodeRef.current = gain;
+    } catch (err) {
+      console.warn("Failed to connect live microphone monitor", err);
+    }
+
+    return () => {
+      if (monitorSourceRef.current) {
+        try { monitorSourceRef.current.disconnect(); } catch (_) {}
+        monitorSourceRef.current = null;
+      }
+      if (monitorNodeRef.current) {
+        try { monitorNodeRef.current.disconnect(); } catch (_) {}
+        monitorNodeRef.current = null;
+      }
+    };
+  }, [currentMicStream, isMicMonitorEnabled]);
 
   // Sidebar collapse state — declared before calculateScale so it can be read inside it
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(() => window.innerWidth < 768);
@@ -2036,6 +2083,8 @@ Return ONLY valid JSON in the format: {"drawings":[...]}`;
         onRecoverVideo={handleRecoverVideo}
         onResumeSession={handleResumeRecoveredSession}
         onDiscardSession={handleDiscardRecoveredSession}
+        isMicMonitorEnabled={isMicMonitorEnabled}
+        setIsMicMonitorEnabled={setIsMicMonitorEnabled}
         isMobileMode={isMobileMode}
         setIsMobileMode={setIsMobileMode}
         exportSeparately={exportSeparately}
@@ -2458,6 +2507,7 @@ Return ONLY valid JSON in the format: {"drawings":[...]}`;
           onStopRecording={handleStopRecording}
           isMobileMode={isMobileMode}
           setIsMobileMode={setIsMobileMode}
+          micLevel={micLevel}
         />
       </div>
 

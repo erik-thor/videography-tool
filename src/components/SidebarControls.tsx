@@ -115,6 +115,8 @@ interface SidebarControlsProps {
   onRecoverVideo: () => void;
   onResumeSession: () => void;
   onDiscardSession: () => void;
+  isMicMonitorEnabled: boolean;
+  setIsMicMonitorEnabled: (v: boolean) => void;
   isMobileMode: boolean;
   setIsMobileMode: (v: boolean) => void;
   activeTab: 'canvas' | 'script' | 'record';
@@ -574,6 +576,8 @@ export const SidebarControls: React.FC<SidebarControlsProps> = ({
   onRecoverVideo,
   onResumeSession,
   onDiscardSession,
+  isMicMonitorEnabled,
+  setIsMicMonitorEnabled,
   isMobileMode,
   setIsMobileMode,
   activeTab,
@@ -1228,6 +1232,33 @@ export const SidebarControls: React.FC<SidebarControlsProps> = ({
                   </div>
                   <span style={{ fontSize: '10px', color: 'rgba(244,234,213,0.4)', minWidth: '24px', textAlign: 'right' }}>{micLevel}%</span>
                 </div>
+                
+                {/* Live Microphone Monitor Toggle */}
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: '6px' }}>
+                  <span style={{ color: 'rgba(244,234,213,0.45)', fontSize: '11px' }}>Live Headphone Monitor</span>
+                  <button
+                    onClick={() => setIsMicMonitorEnabled(!isMicMonitorEnabled)}
+                    style={{
+                      background: isMicMonitorEnabled ? 'rgba(138,166,142,0.25)' : 'rgba(244,234,213,0.06)',
+                      border: isMicMonitorEnabled ? '1px solid rgba(138,166,142,0.5)' : '1px solid rgba(244,234,213,0.12)',
+                      color: isMicMonitorEnabled ? '#8AA68E' : 'rgba(244,234,213,0.4)',
+                      borderRadius: '5px',
+                      padding: '3px 8px',
+                      cursor: 'pointer',
+                      fontSize: '10.5px',
+                      fontFamily: 'Inter',
+                      fontWeight: 600,
+                      transition: 'all 0.2s ease',
+                    }}
+                  >
+                    {isMicMonitorEnabled ? 'ON' : 'OFF'}
+                  </button>
+                </div>
+                {isMicMonitorEnabled && (
+                  <p style={{ margin: '2px 0 0 0', fontSize: '9.5px', color: '#B8674A', fontFamily: 'Inter', lineHeight: '1.3' }}>
+                    ⚠️ Please use headphones to prevent feedback loops/howling.
+                  </p>
+                )}
               </div>
 
               {/* Camera list select */}

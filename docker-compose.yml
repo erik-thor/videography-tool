@@ -11,10 +11,11 @@ services:
     networks:
       - default
       - tools_network
-    restart: always
+    restart: unless-stopped
 
 networks:
   tools_network:
-    external: true
+    name: tools_network
+    external: false
 
 
